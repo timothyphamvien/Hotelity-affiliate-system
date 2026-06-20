@@ -8,6 +8,7 @@ export interface User {
   role: UserRole;
   status: 'PENDING' | 'APPROVED' | 'ACTIVE' | 'INACTIVE';
   referralCode?: string;
+  referredBy?: string;
   commissionRate: number; // For CTV custom rate %
   createdAt: string;
 }
@@ -134,6 +135,14 @@ export interface Customer {
   tags?: string[];
   files?: Array<{ name: string; url: string; uploadedAt: string }>;
   note?: string;
+  companyName?: string;
+  taxCode?: string;
+  invoiceAddress?: string;
+  invoiceEmail?: string;
+  createdBy?: string;
+  createdAt?: string;
+  rating?: number; // 1 to 5 stars for customer credibility
+  credibilityNote?: string; // Specially designated for tracking credibility issues/notes
 }
 
 export interface Booking {
@@ -236,6 +245,34 @@ export interface AppNotification {
   type: 'INFO' | 'SUCCESS' | 'WARNING';
   isRead: boolean;
   createdAt: string;
+}
+
+export interface SentEmail {
+  id: string;
+  bookingId: string;
+  ctvId: string;
+  customerName: string;
+  customerEmail: string;
+  subject: string;
+  bodyHtml: string;
+  invoiceHtml?: string;
+  createdAt: string;
+  status: 'SENT' | 'DELIVERED';
+}
+
+export interface BankAccount {
+  bankName: string;
+  bankAccount: string;
+  bankHolder: string;
+  verified?: boolean;
+}
+
+export interface DepositSetup {
+  ctvId: string;
+  ctvAccount: BankAccount;
+  platformAccount: BankAccount;
+  homeOwnerAccount: BankAccount;
+  updatedAt: string;
 }
 
 export const TYPES_STABILIZER = true;

@@ -328,5 +328,21 @@ export const api = {
     }>('/api/recommendations/gemini', {
       method: 'POST'
     });
+  },
+
+  // --- AUTOMATED EMAIL & DEPOSIT ACCOUNT APIS ---
+  async getSentEmails() {
+    return request<any[]>('/api/emails');
+  },
+
+  async getDepositAccounts() {
+    return request<any>('/api/deposit-accounts');
+  },
+
+  async updateDepositAccounts(updates: any) {
+    return request<any>('/api/deposit-accounts', {
+      method: 'PUT',
+      body: JSON.stringify(updates)
+    });
   }
 };

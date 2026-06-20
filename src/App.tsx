@@ -21,6 +21,9 @@ import { AdminBookingsNew } from './pages/admin/AdminBookingsNew';
 import { AdminReports } from './pages/admin/AdminReports';
 import { AdminCustomers } from './pages/admin/AdminCustomers';
 import { CtvCustomers } from './pages/ctv/CtvCustomers';
+import { CtvReferralProgram } from './pages/ctv/CtvReferralProgram';
+import { CtvSettings } from './pages/ctv/CtvSettings';
+import { CtvDocs } from './pages/ctv/CtvDocs';
 
 import { Room, AppNotification, User as AppUser } from './types';
 import { api } from './services/api';
@@ -29,7 +32,7 @@ import {
   Menu, X, LogOut, Wallet, Bell, Shield, 
   BarChart, Home, CheckSquare, Users, Landmark, 
   ShieldAlert, BookOpen, Layers, Sparkles, CircleUser,
-  Building2, Calendar, FileText
+  Building2, Calendar, FileText, Gift, Settings
 } from 'lucide-react';
 
 function BaseLayout() {
@@ -245,6 +248,12 @@ function BaseLayout() {
         return <CtvWallet />;
       case 'ctv_customers':
         return <CtvCustomers onNavigate={(view) => { setActiveView(view); }} />;
+      case 'ctv_referral':
+        return <CtvReferralProgram />;
+      case 'ctv_settings':
+        return <CtvSettings />;
+      case 'ctv_docs':
+        return <CtvDocs />;
 
       // Admin & Operational Views
       case 'admin_dashboard':
@@ -283,9 +292,12 @@ function BaseLayout() {
   const ctvNavItems = [
     { id: 'ctv_dashboard', label: 'Tổng Quan Dashboard', icon: BarChart },
     { id: 'ctv_rooms', label: 'Xem Phòng Trống', icon: Home },
-    { id: 'ctv_history', label: 'Lịch Sử Đơn Đặt', icon: CheckSquare },
+    { id: 'ctv_history', label: 'Lịch Sử Giao Dịch', icon: CheckSquare },
     { id: 'ctv_wallet', label: 'Ví Thưởng Hoa Hồng', icon: Landmark },
-    { id: 'ctv_customers', label: 'Quản Lý Khách Hàng', icon: Users },
+    { id: 'ctv_customers', label: 'Quản Lý Khách Hàng', icon: CircleUser },
+    { id: 'ctv_referral', label: 'Mời Bạn Đồng Hành', icon: Gift },
+    { id: 'ctv_settings', label: 'Cài Đặt Thanh Toán', icon: Settings },
+    { id: 'ctv_docs', label: 'Tài Liệu & Thư Viện', icon: BookOpen },
   ];
 
   const adminNavItems = [
@@ -297,7 +309,7 @@ function BaseLayout() {
     { id: 'admin_reports', label: 'Báo Cáo Thống Kê', icon: FileText },
     { id: 'admin_ctv', label: 'Duyệt Cộng Tác Viên', icon: Users },
     { id: 'admin_payout', label: 'Duyệt Yêu Cầu Rút', icon: Landmark },
-    { id: 'admin_customers', label: 'Quản Lý Khách Hàng', icon: Users },
+    { id: 'admin_customers', label: 'Quản Lý Khách Hàng', icon: CircleUser },
   ];
 
   const roleUpper = String(currentMockRole || user.role).toUpperCase();

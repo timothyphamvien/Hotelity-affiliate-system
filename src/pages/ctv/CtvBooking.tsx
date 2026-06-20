@@ -52,6 +52,12 @@ export function CtvBooking({ selectedRoom, initialCheckIn, initialCheckOut, onNa
   const [errorMsg, setErrorMsg] = useState('');
   const [success, setSuccess] = useState(false);
 
+  // Dynamic deposit routing & QR display states
+  const [createdBooking, setCreatedBooking] = useState<any>(null);
+  const [depositSetup, setDepositSetup] = useState<any>(null);
+  const [selectedPaymentChannel, setSelectedPaymentChannel] = useState<'CTV' | 'PLATFORM' | 'HOME_OWNER'>('PLATFORM');
+  const [customDepositAmount, setCustomDepositAmount] = useState<number>(0);
+
   // Quick Customer Search & Session integration variables
   const [availableCustomers, setAvailableCustomers] = useState<any[]>([]);
   const [customerSearchQuery, setCustomerSearchQuery] = useState('');
@@ -60,6 +66,16 @@ export function CtvBooking({ selectedRoom, initialCheckIn, initialCheckOut, onNa
   useEffect(() => {
     // Populate client database for instant search
     api.getCustomers().then(setAvailableCustomers).catch(console.error);
+
+    // Fetch deposit setup allocation
+    api.getDepositAccounts().then((accounts) => {
+      if (accounts) {
+        setDepositSetup(accounts);
+        if (accounts.activeChannel) {
+          setSelectedPaymentChannel(accounts.activeChannel);
+        }
+      }
+    }).catch(console.error);
 
     // Parse preselected client from CRM click redirect
     const raw = sessionStorage.getItem('pre_selected_booking_customer');
@@ -212,7 +228,7 @@ export function CtvBooking({ selectedRoom, initialCheckIn, initialCheckOut, onNa
     }
 
     try {
-      await api.createBooking({
+      const resp = await api.createBooking({
         roomId: selectedRoom.id,
         customerName,
         customerPhone,
@@ -224,10 +240,10 @@ export function CtvBooking({ selectedRoom, initialCheckIn, initialCheckOut, onNa
         services: selectedServices
       });
       
+      setCreatedBooking(resp);
+      const standardDeposit = Number(sellingPrice) >= 2000000 ? 1000000 : 500000;
+      setCustomDepositAmount(standardDeposit);
       setSuccess(true);
-      setTimeout(() => {
-        onNavigate('ctv_history');
-      }, 2000);
     } catch (err: any) {
       setErrorMsg(err.message || 'Lỗi gửi yêu cầu đặt chỗ lên hệ thống.');
     } finally {
@@ -308,14 +324,206 @@ export function CtvBooking({ selectedRoom, initialCheckIn, initialCheckOut, onNa
       </div>
 
       {success ? (
-        <div className="bg-white rounded-2xl p-10 border border-slate-100 shadow-xl text-center space-y-4 max-w-lg mx-auto">
-          <div className="h-16 w-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-sm">
-            <CheckCircle className="h-10 w-10 text-emerald-600" />
+        <div className="bg-white rounded-3xl p-6 sm:p-10 border border-slate-200/60 shadow-xl max-w-4xl mx-auto space-y-8 animate-fade-in">
+          {/* Header */}
+          <div className="text-center space-y-2">
+            <div className="h-14 w-14 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
+              <CheckCircle className="h-8 w-8 text-emerald-600" />
+            </div>
+            <h2 className="text-2xl font-black text-indigo-950 font-display">Gửi Yêu Cầu Đặt Phòng Thành Công!</h2>
+            <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+              Hệ thống đã tạm thời khóa block phòng trên trang chủ để tránh xung đột lịch. Vui lòng hướng dẫn khách thanh toán cọc dưới đây để kích hoạt hóa đơn điện tử tự động!
+            </p>
           </div>
-          <h2 className="text-xl font-extrabold text-slate-900">Gửi Đơn Đặt Phòng Khoản Thành Công!</h2>
-          <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-            Hệ thống dã tự động khóa block tạm ngày này trên lịch trống để chống trùng phòng, đồng thời ghi nhận mã sao kê để ADMIN phê duyện. Vui lòng giữ liên kết để trao đổi thông tin cọc với khách! 
-          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
+            
+            {/* Booking Details Left Column */}
+            <div className="md:col-span-6 space-y-5">
+              <div className="p-5 bg-slate-50 border border-slate-100 rounded-2xl space-y-4 text-left">
+                <h3 className="text-xs font-black uppercase text-indigo-900 tracking-wider flex items-center gap-1.5 border-b border-slate-200 pb-2">
+                  <FileText className="h-4 w-4 text-indigo-650" />
+                  Thông Tin Hóa Đơn Trị Giá: {Number(sellingPrice).toLocaleString('vi-VN')} đ
+                </h3>
+
+                <div className="space-y-2.5 text-xs">
+                  <div className="flex justify-between items-center text-slate-600">
+                    <span className="font-semibold">Mã đơn phòng:</span>
+                    <span className="font-mono font-bold text-indigo-900 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">{createdBooking?.id || 'Đang tạo...'}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-600">
+                    <span className="font-semibold">Khu vực / Biệt thự:</span>
+                    <span className="font-bold text-slate-800">{selectedRoom.propertyName}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-600">
+                    <span className="font-semibold">Phòng nghỉ:</span>
+                    <span className="font-bold text-slate-800">{selectedRoom.name}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-600">
+                    <span className="font-semibold">Đại diện lưu trú:</span>
+                    <span className="font-bold text-slate-800">{customerName} ({customerPhone})</span>
+                  </div>
+                  <div className="flex justify-between items-center text-slate-650">
+                    <span className="font-semibold">Nights check-in:</span>
+                    <span className="font-mono font-bold text-indigo-905">{checkIn} ➔ {checkOut}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Deposit Customizer */}
+              <div className="p-5 bg-indigo-50/40 border border-indigo-100 rounded-2xl space-y-4 text-left">
+                <span className="text-[10px] text-indigo-700 uppercase font-black tracking-widest block">💰 Điểu Chỉnh Số Tiền Khách Cần Cọc</span>
+                <div className="space-y-3">
+                  <div className="flex gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setCustomDepositAmount(Number(sellingPrice) * 0.3)}
+                      className="flex-1 min-w-[70px] py-1 px-2 border border-indigo-200 text-indigo-800 bg-white hover:bg-slate-50 rounded-lg text-[9px] font-bold"
+                    >
+                      30% ({Math.round(Number(sellingPrice) * 0.3).toLocaleString('vi-VN')}đ)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCustomDepositAmount(Number(sellingPrice) * 0.5)}
+                      className="flex-1 min-w-[70px] py-1 px-2 border border-indigo-200 text-indigo-800 bg-white hover:bg-slate-50 rounded-lg text-[9px] font-bold"
+                    >
+                      50% ({Math.round(Number(sellingPrice) * 0.5).toLocaleString('vi-VN')}đ)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCustomDepositAmount(Number(sellingPrice))}
+                      className="flex-1 min-w-[70px] py-1 px-2 border border-indigo-200 text-indigo-800 bg-white hover:bg-slate-50 rounded-lg text-[9px] font-bold"
+                    >
+                      100% Full (Đủ)
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Số tiền cọc tùy biến (đ)</label>
+                    <input
+                      type="number"
+                      step={50000}
+                      value={customDepositAmount}
+                      onChange={(e) => setCustomDepositAmount(Number(e.target.value))}
+                      className="w-full p-2.5 text-xs border border-slate-200 bg-white rounded-lg font-mono font-black text-slate-800"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Payee Selection & QR Code Right Column */}
+            <div className="md:col-span-6 space-y-4">
+              <div className="p-5 border border-slate-200 rounded-3xl space-y-4 text-left shadow-sm">
+                <span className="text-[10px] text-slate-500 uppercase font-black tracking-widest block text-center">⭐ CHỌN TÀI KHOẢN NHẬN TIỀN CỌC CHUYỂN KHOẢN</span>
+                
+                {/* Dynamically toggle accounts */}
+                <div className="grid grid-cols-3 gap-1.5 bg-slate-100 p-1 rounded-xl">
+                  {['CTV', 'PLATFORM', 'HOME_OWNER'].map((ch) => {
+                    const isActive = selectedPaymentChannel === ch;
+                    const label = ch === 'CTV' ? 'Ví CTV' : ch === 'PLATFORM' ? 'Đại diện' : 'Chủ Home';
+                    return (
+                      <button
+                        type="button"
+                        key={ch}
+                        onClick={() => setSelectedPaymentChannel(ch as any)}
+                        className={`py-1.5 px-1 rounded-lg text-[10px] font-bold text-center transition ${
+                          isActive 
+                            ? 'bg-white text-indigo-950 shadow-xs scale-100' 
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Account card details display */}
+                {(() => {
+                  let bankName = '';
+                  let bankAccount = '';
+                  let bankHolder = '';
+                  let typeText = '';
+
+                  if (selectedPaymentChannel === 'CTV') {
+                    bankName = depositSetup?.ctvAccount?.bankName || '';
+                    bankAccount = depositSetup?.ctvAccount?.bankAccount || '';
+                    bankHolder = depositSetup?.ctvAccount?.bankHolder || '';
+                    typeText = 'Tài khoản cá nhân của bạn (Cộng tác viên)';
+                  } else if (selectedPaymentChannel === 'PLATFORM') {
+                    bankName = depositSetup?.platformAccount?.bankName || 'VIETINBANK';
+                    bankAccount = depositSetup?.platformAccount?.bankAccount || '1122334455';
+                    bankHolder = depositSetup?.platformAccount?.bankHolder || 'CONG TY CP LANG BINH YEN';
+                    typeText = 'Tài khoản đại diện Nền tảng thương mại';
+                  } else {
+                    bankName = depositSetup?.homeOwnerAccount?.bankName || '';
+                    bankAccount = depositSetup?.homeOwnerAccount?.bankAccount || '';
+                    bankHolder = depositSetup?.homeOwnerAccount?.bankHolder || '';
+                    typeText = 'Tài khoản chủ khu nghỉ dưỡng / homestay sở tại';
+                  }
+
+                  const qrSrc = bankAccount && bankName 
+                    ? `https://img.vietqr.io/image/${bankName.replace(/\s+/g, '')}-${bankAccount}-compact2.png?amount=${customDepositAmount}&addInfo=${encodeURIComponent('YEU CAU COC PHONG ' + (createdBooking?.id || ''))}&accountName=${encodeURIComponent(bankHolder)}`
+                    : null;
+
+                  return (
+                    <div className="space-y-4 font-sans">
+                      <div className="p-3 bg-slate-50 rounded-xl space-y-1 text-[11px] text-slate-700 font-medium">
+                        <div className="flex justify-between"><b className="text-slate-400">Tuyến đi:</b> <span>{typeText}</span></div>
+                        <div className="flex justify-between"><b>Ngân hàng:</b> <span className="font-bold text-indigo-900 uppercase">{bankName || 'Chưa thiết lập'}</span></div>
+                        <div className="flex justify-between"><b>Số tài khoản:</b> <span className="font-mono font-bold text-slate-800">{bankAccount || 'Chưa thiết lập'}</span></div>
+                        <div className="flex justify-between"><b>Người thụ hưởng:</b> <span className="font-bold uppercase text-slate-800">{bankHolder || 'Chưa thiết lập'}</span></div>
+                      </div>
+
+                      {/* QR Display */}
+                      {qrSrc ? (
+                        <div className="bg-white border rounded-2xl p-4 text-center space-y-2 max-w-[245px] mx-auto shadow-inner">
+                          <img 
+                            src={qrSrc} 
+                            alt="VietQR code" 
+                            className="w-full h-auto aspect-square object-contain mx-auto"
+                            referrerPolicy="no-referrer"
+                          />
+                          <p className="text-[10px] text-slate-400 font-mono font-bold leading-tight uppercase">VietQR Quét Mã Tự Động Điền</p>
+                        </div>
+                      ) : (
+                        <div className="p-8 text-center text-rose-600 bg-rose-50 border border-rose-100 rounded-2xl text-xs font-semibold">
+                          ❌ Bạn chưa cấu hình tài khoản thụ hưởng cho kênh này trong mục "Kênh nhận cọc" tại Trang chủ. Vui lòng thiết lập để kích hoạt VietQR tự động!
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+              </div>
+            </div>
+
+          </div>
+
+          {/* Navigation Action Buttons footer */}
+          <div className="pt-6 border-t border-slate-100 flex flex-wrap justify-center items-center gap-4">
+            <button
+              onClick={() => onNavigate('ctv_history')}
+              className="px-6 py-3 bg-indigo-650 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition cursor-pointer uppercase tracking-wider shadow-md"
+            >
+              📋 Quản lý lịch sử giao dịch
+            </button>
+            <button
+              onClick={() => {
+                // Clear state & reload for a fresh order
+                setCustomerName('');
+                setCustomerPhone('');
+                setNote('');
+                setSuccess(false);
+                setCreatedBooking(null);
+                setCurrentStep(1);
+              }}
+              className="px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer uppercase tracking-wider"
+            >
+              ➕ Tạo tiếp đơn khách mới
+            </button>
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 max-w-7xl mx-auto">

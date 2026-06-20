@@ -1,6 +1,6 @@
 {
   "name": "CTV Room Booking System",
-  "description": "Hệ thống quản lý cộng tác viên (CTV) bán phòng homestay, villa, resort trực quan và hiệu quả.",
+  "description": "Hệ thống quản lý cộng tác viên (CTV) bán phòng homestay chuyên sâu, tối ưu hóa giao diện 3-touches, sẵn sàng kết nối dữ liệu microservices.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

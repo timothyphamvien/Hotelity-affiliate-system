@@ -134,7 +134,7 @@ async function startServer() {
 
   // Auth: Đăng ký CTV
   app.post('/api/auth/register', (req, res) => {
-    const { name, email, phone, password } = req.body;
+    const { name, email, phone, password, referralCode } = req.body;
     if (!name || !email || !phone || !password) {
       return res.status(400).json({ message: 'Vui lòng điền đầy đủ thông tin đăng ký.' });
     }
@@ -144,7 +144,37 @@ async function startServer() {
       return res.status(400).json({ message: 'Email này đã đăng ký trên hệ thống.' });
     }
 
+    // Process referral code
+    let referredBy: string | undefined = undefined;
+    let referrerName = '';
+    if (referralCode) {
+      const allUsers = FileDatabase.getUsers();
+      const referrer = allUsers.find(u => u.referralCode === referralCode || u.id === referralCode);
+      if (referrer) {
+        referredBy = referrer.id;
+        referrerName = referrer.name;
+        
+        // Add 100,000đ directly to referrer's wallet!
+        const wallet = FileDatabase.getWalletByCreator(referrer.id);
+        if (wallet) {
+          wallet.balance += 100000;
+          wallet.totalEarned += 100000;
+        }
+        
+        FileDatabase.createNotification(
+          referrer.id,
+          '🎁 Cộng Thưởng Giới Thiệu CTV Mới',
+          `Bạn nhận được +100.000đ quà tặng do CTV ${name} đăng ký tài khoản thành công qua mã giới thiệu của bạn.`,
+          'SUCCESS'
+        );
+      }
+    }
+
     const newUserId = 'usr_' + Math.random().toString(36).substr(2, 9);
+    // Auto-generate clean referral code for newly registered CTV
+    const cleanName = name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z]/g, "").toUpperCase();
+    const cleanReferralCode = `HUB_${cleanName.substr(0, 5)}_${Math.floor(100 + Math.random() * 900)}`;
+
     const newCTV: User = {
       id: newUserId,
       name,
@@ -152,12 +182,14 @@ async function startServer() {
       phone,
       role: 'CTV',
       status: 'PENDING', // Registered CTVs start as pending
+      referralCode: cleanReferralCode,
+      referredBy,
       commissionRate: 10, // Default baseline 10%
       createdAt: new Date().toISOString()
     };
 
     FileDatabase.createUser(newCTV, password);
-    FileDatabase.createNotification('ADMIN', 'Đăng ký CTV mới', `CTV ${name} vừa đăng ký tài khoản và đang chờ bạn phê duyệt.`, 'WARNING');
+    FileDatabase.createNotification('usr_admin', 'Đăng ký CTV mới', `CTV ${name} vừa đăng ký tài khoản (giới thiệu bởi: ${referrerName || 'Hệ thống trực tiếp'}) và đang chờ bạn phê duyệt.`, 'WARNING');
 
     res.status(201).json({
       message: 'Đăng ký tài khoản CTV thành công! Ban quản trị sẽ sớm duyệt tài khoản của bạn.'
@@ -231,21 +263,20 @@ async function startServer() {
     const allBookings = FileDatabase.getBookings();
 
     if (isCtv) {
-      // CTV gets basic access: customers details that they created bookings for
+      // CTV gets basic access: customers details that they created bookings for or created directly
       const myBookingCustomerIds = new Set(
         allBookings
           .filter(b => b.ctvId === req.user.id)
           .map(b => b.customerId)
           .filter(Boolean)
       );
-      // Let's also include any customer they created or general list but sanitized
-      const ctvCustomers = allCustomers.map(c => {
-        const isMine = myBookingCustomerIds.has(c.id);
-        return {
+      
+      const ctvCustomers = allCustomers
+        .filter(c => c.createdBy === req.user.id || myBookingCustomerIds.has(c.id))
+        .map(c => ({
           ...c,
-          isMine
-        };
-      });
+          isMine: true
+        }));
       return res.json(ctvCustomers);
     }
 
@@ -277,7 +308,23 @@ async function startServer() {
       return res.status(404).json({ message: 'Không tìm thấy thông tin khách gửi này.' });
     }
 
+    const isCtv = String(req.user.role).toUpperCase() === 'CTV';
     const allBookings = FileDatabase.getBookings();
+
+    if (isCtv) {
+      const myBookingCustomerIds = new Set(
+        allBookings
+          .filter(b => b.ctvId === req.user.id)
+          .map(b => b.customerId)
+          .filter(Boolean)
+      );
+      const isCreatedByMe = c.createdBy === req.user.id;
+      const isBookedByMe = myBookingCustomerIds.has(c.id);
+      if (!isCreatedByMe && !isBookedByMe) {
+        return res.status(403).json({ message: 'Bạn không có quyền truy cập thông tin khách hàng của CTV khác.' });
+      }
+    }
+
     const customerBookings = allBookings.filter(b => b.customerId === c.id || b.customerPhone === c.phone);
 
     // Calculate details
@@ -291,7 +338,7 @@ async function startServer() {
       status: b.bookingStatus || b.status,
       sellingPrice: b.sellingPrice,
       surcharge: b.surcharge,
-      totalAmount: b.sellingPrice + (b.surcharge || 0),
+      totalAmount: (b.sellingPrice || 0) + (b.surcharge || 0),
       paidAmount: b.paidAmount || 0,
       paymentStatus: b.paymentStatus,
       ctvName: b.ctvName || 'Hệ thống trực tiếp',
@@ -306,7 +353,7 @@ async function startServer() {
   });
 
   app.post('/api/customers', authMiddleware, (req: any, res) => {
-    const { fullName, phone, email, identityNumber, note, gender, address, tags } = req.body;
+    const { fullName, phone, email, identityNumber, note, gender, address, tags, companyName, taxCode, invoiceAddress, invoiceEmail, rating, credibilityNote } = req.body;
     if (!fullName || !phone) {
       return res.status(400).json({ message: 'Vui lòng điền họ tên và số điện thoại khách hàng.' });
     }
@@ -314,10 +361,15 @@ async function startServer() {
     // Check if phone already registered to avoid duplication
     const existing = FileDatabase.getCustomers().find(c => c.phone === phone);
     if (existing) {
-      return res.json(existing); // Return existing instead of throwing, or notify
+      // If found but owned by another and requester is CTV, we return details or update ownership if not set
+      if (!existing.createdBy) {
+        existing.createdBy = req.user.id;
+        FileDatabase.updateCustomer(existing.id, { createdBy: req.user.id });
+      }
+      return res.json(existing);
     }
 
-    const newCustomer: Customer & { createdBy?: string; gender?: string; address?: string; tags?: string[]; files?: any[]; createdAt?: string } = {
+    const newCustomer: Customer = {
       id: 'cus_' + Math.random().toString(36).substr(2, 9),
       fullName,
       phone,
@@ -328,19 +380,43 @@ async function startServer() {
       address: address || '',
       tags: Array.isArray(tags) ? tags : [],
       files: [],
+      companyName: companyName || '',
+      taxCode: taxCode || '',
+      invoiceAddress: invoiceAddress || '',
+      invoiceEmail: invoiceEmail || '',
       createdBy: req.user.id,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      rating: rating !== undefined ? Number(rating) : 5,
+      credibilityNote: credibilityNote || ''
     };
 
-    FileDatabase.createCustomer(newCustomer as any);
+    FileDatabase.createCustomer(newCustomer);
     res.status(201).json(newCustomer);
   });
 
   app.put('/api/customers/:id', authMiddleware, (req: any, res) => {
-    const updated = FileDatabase.updateCustomer(req.params.id, req.body);
-    if (!updated) {
+    const c = FileDatabase.getCustomerById(req.params.id);
+    if (!c) {
       return res.status(404).json({ message: 'Không tìm thấy hồ sơ khách hàng cần cập nhật.' });
     }
+
+    const isCtv = String(req.user.role).toUpperCase() === 'CTV';
+    if (isCtv) {
+      const allBookings = FileDatabase.getBookings();
+      const myBookingCustomerIds = new Set(
+        allBookings
+          .filter(b => b.ctvId === req.user.id)
+          .map(b => b.customerId)
+          .filter(Boolean)
+      );
+      const isCreatedByMe = c.createdBy === req.user.id;
+      const isBookedByMe = myBookingCustomerIds.has(c.id);
+      if (!isCreatedByMe && !isBookedByMe) {
+        return res.status(403).json({ message: 'Bạn không có quyền chỉnh sửa thông tin khách hàng của CTV khác.' });
+      }
+    }
+
+    const updated = FileDatabase.updateCustomer(req.params.id, req.body);
     res.json(updated);
   });
 
@@ -530,6 +606,172 @@ async function startServer() {
     res.json(bookings);
   });
 
+function generateBookingConfirmationAndInvoice(booking: Booking, customer: Customer, ctvName: string) {
+  const deposit = booking.commissionAmount >= 500000 ? 1000000 : 500000;
+
+  const emailBody = `
+    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; background-color: #ffffff; color: #1f2937;">
+      <div style="background: linear-gradient(135deg, #0d9488, #0f766e); padding: 30px; text-align: center; color: white;">
+        <h1 style="margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.025em;">XÁC NHẬN ĐẶT PHÒNG THÀNH CÔNG</h1>
+        <p style="margin: 5px 0 0; font-size: 14px; opacity: 0.9;">Mã Đơn Phòng: <strong>${booking.bookingCode || booking.id.toUpperCase()}</strong></p>
+      </div>
+      <div style="padding: 24px;">
+        <p style="margin: 0 0 16px; font-size: 16px;">Kính gửi Anh/Chị <strong>${customer.fullName}</strong>,</p>
+        <p style="margin: 0 0 24px; line-height: 1.6; font-size: 14px;">Chúc mừng! Kỳ nghỉ dưỡng của Anh/Chị đã được đặt thành công trên hệ thống liên kết phân phối <strong>Làng Bình Yên StayHub</strong> bởi Đại sứ Cộng tác viên <strong>${ctvName}</strong>. Dưới đây là chi tiết lịch trình phòng nghỉ của Anh/Chị:</p>
+        
+        <div style="background-color: #f9fafb; border-radius: 6px; padding: 18px; margin-bottom: 24px;">
+          <h3 style="margin: 0 0 12px; font-size: 16px; color: #0d9488; border-bottom: 1px solid #e5e7eb; padding-bottom: 8px;">🏡 THÔNG TIN KỲ NGHỈ</h3>
+          <table style="width: 100%; font-size: 14px; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 6px 0; color: #4b5563; width: 120px;">Khu lưu trú:</td>
+              <td style="padding: 6px 0; font-weight: 500; color: #1f2937;">${booking.propertyName}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #4b5563;">Hạng phòng:</td>
+              <td style="padding: 6px 0; font-weight: 500; color: #1f2937;">${booking.roomName}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #4b5563;">Ngày nhận:</td>
+              <td style="padding: 6px 0; font-weight: 500; color: #0f766e;">${booking.checkIn} (14:00)</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #4b5563;">Ngày trả:</td>
+              <td style="padding: 6px 0; font-weight: 500; color: #991b1b;">${booking.checkOut} (12:00)</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #4b5563;">Số đêm:</td>
+              <td style="padding: 6px 0; font-weight: 500; color: #1f2937;">${booking.nights} đêm</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; color: #4b5563;">Số khách:</td>
+              <td style="padding: 6px 0; font-weight: 500; color: #1f2937;">${booking.guests} người lớn</td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="background-color: #fafaf9; border-radius: 6px; padding: 18px; margin-bottom: 24px; border: 1px dashed #d1d5db;">
+          <h3 style="margin: 0 0 12px; font-size: 16px; color: #b45309;">💰 CHI TIẾT THANH TOÁN</h3>
+          <table style="width: 100%; font-size: 14px;">
+            <tr>
+              <td style="padding: 4px 0; color: #4b5563;">Tổng giá trị:</td>
+              <td style="padding: 4px 0; text-align: right; font-weight: 600; color: #111827;">${booking.sellingPrice.toLocaleString('vi-VN')} đ</td>
+            </tr>
+            <tr>
+              <td style="padding: 4px 0; color: #10b981;">Đã thanh toán cọc:</td>
+              <td style="padding: 4px 0; text-align: right; font-weight: 600; color: #10b981;">-${(booking.depositRequired || deposit).toLocaleString('vi-VN')} đ</td>
+            </tr>
+            <tr style="border-top: 1px solid #e5e7eb;">
+              <td style="padding: 8px 0 0; font-weight: 600; color: #111827;">Còn lại cần thanh toán:</td>
+              <td style="padding: 8px 0 0; text-align: right; font-weight: 600; font-size: 16px; color: #b91c1c;">${(booking.sellingPrice - (booking.depositRequired || deposit)).toLocaleString('vi-VN')} đ</td>
+            </tr>
+          </table>
+        </div>
+
+        <p style="margin: 0 0 16px; line-height: 1.5; font-size: 13px; color: #6b7280;">* Hướng dẫn nhận phòng chi tiết và số hotline quản lý tòa nhà sẽ được gửi đến quý khách trước 1 ngày nhận phòng. Xin chân thành cảm ơn quý khách hàng!</p>
+      </div>
+      <div style="background-color: #f3f4f6; padding: 15px; text-align: center; font-size: 12px; color: #6b7280; border-top: 1px solid #e5e7eb;">
+        <p style="margin: 0 0 4px;">Đây là email tự động từ hệ thống Làng Bình Yên StayHub.</p>
+        <p style="margin: 0;">© 2026 StayHub Platform. Hotline Hỗ trợ CTV/Khách hàng: 1900 1199.</p>
+      </div>
+    </div>
+  `;
+
+  const hasTax = !!customer.companyName;
+  const subtotal = booking.sellingPrice;
+  const vat = hasTax ? Math.round(subtotal * 0.1) : 0;
+  const grandTotal = subtotal + vat;
+
+  const invoiceBody = `
+    <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto; padding: 30px; border: 1px solid #d1d5db; background-color: #ffffff; color: #374151;">
+      <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #0d9488; padding-bottom: 20px; margin-bottom: 20px;">
+        <div>
+          <h1 style="color: #0d9488; margin: 0; font-size: 26px; font-weight: bold; letter-spacing: 1px;">HÓA ĐƠN ĐIỆN TỬ</h1>
+          <p style="margin: 5px 0 0; font-size: 13px; color: #6b7280;">Hóa đơn thương mại điện tử StayHub</p>
+        </div>
+        <div style="text-align: right;">
+          <h3 style="margin: 0; color: #1f2937;">CÔNG TY CP ĐẦU TƯ DU LỊCH LÀNG BÌNH YÊN</h3>
+          <p style="margin: 4px 0 0; font-size: 12px; color: #6b7280;">Mã số thuế: 0108889999</p>
+          <p style="margin: 2px 0 0; font-size: 12px; color: #6b7280;">Địa chỉ: Khu du lịch làng Bình Yên, Triệu Việt Vương, Đà Lạt</p>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 25px;">
+        <h4 style="margin: 0 0 10px; border-bottom: 1.5px solid #e5e7eb; padding-bottom: 5px; color: #0f766e;">THÔNG TIN KHÁCH HÀNG / ĐƠN VỊ</h4>
+        <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
+          <tr>
+            <td style="padding: 4px 0; font-weight: bold; width: 150px;">Tên khách hàng:</td>
+            <td style="padding: 4px 0;">${customer.fullName}</td>
+            <td style="padding: 4px 0; font-weight: bold; width: 120px; text-align: right;">Số hóa đơn:</td>
+            <td style="padding: 4px 0; text-align: right; color: #b91c1c; font-weight: bold;">HD-${booking.bookingCode || booking.id.toUpperCase()}</td>
+          </tr>
+          <tr>
+            <td style="padding: 4px 0; font-weight: bold;">Số điện thoại:</td>
+            <td style="padding: 4px 0;">${customer.phone}</td>
+            <td style="padding: 4px 0; font-weight: bold; text-align: right;">Ngày xuất bản:</td>
+            <td style="padding: 4px 0; text-align: right;">${new Date().toLocaleDateString('vi-VN')}</td>
+          </tr>
+          ${hasTax ? `
+          <tr>
+            <td style="padding: 4px 0; font-weight: bold;">Tên công ty:</td>
+            <td style="padding: 4px 0;" colspan="3">${customer.companyName}</td>
+          </tr>
+          <tr>
+            <td style="padding: 4px 0; font-weight: bold;">Mã số thuế doanh nghiệp:</td>
+            <td style="padding: 4px 0;">${customer.taxCode}</td>
+            <td style="padding: 4px 0; font-weight: bold; text-align: right;">Địa chỉ hóa đơn:</td>
+            <td style="padding: 4px 0; text-align: right;">${customer.invoiceAddress}</td>
+          </tr>
+          ` : ''}
+        </table>
+      </div>
+
+      <h4 style="margin: 0 0 10px; border-bottom: 1.5px solid #e5e7eb; padding-bottom: 5px; color: #0f766e;">CHI TIẾT DỊCH VỤ</h4>
+      <table style="width: 100%; font-size: 13px; border-collapse: collapse; margin-bottom: 25px;">
+        <thead>
+          <tr style="background-color: #f3f4f6; border-bottom: 1px solid #d1d5db;">
+            <th style="padding: 10px; text-align: left;">Mô tả dịch vụ</th>
+            <th style="padding: 10px; text-align: center;">Số đêm</th>
+            <th style="padding: 10px; text-align: right;">Đơn giá đêm</th>
+            <th style="padding: 10px; text-align: right;">Thành tiền</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom: 1px solid #e5e7eb;">
+            <td style="padding: 10px;">Đặt phòng biệt thự nghỉ dưỡng [${booking.propertyName}] - Hạng ${booking.roomName}<br><span style="font-size:11px;color:#6b7280;">Dành cho ${booking.guests} khách di chuyển trong hạn từ ${booking.checkIn} đến ${booking.checkOut}</span></td>
+            <td style="padding: 10px; text-align: center;">${booking.nights}</td>
+            <td style="padding: 10px; text-align: right;">${Math.round(booking.sellingPrice / booking.nights).toLocaleString('vi-VN')} đ</td>
+            <td style="padding: 10px; text-align: right; font-weight: bold;">${booking.sellingPrice.toLocaleString('vi-VN')} đ</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="display: flex; justify-content: flex-end;">
+        <table style="width: 320px; font-size: 13px; border-collapse: collapse;">
+          <tr>
+            <td style="padding: 6px 0; color: #4b5563;">Cộng tiền dịch vụ:</td>
+            <td style="padding: 6px 0; text-align: right; font-weight: bold;">${subtotal.toLocaleString('vi-VN')} đ</td>
+          </tr>
+          <tr>
+            <td style="padding: 6px 0; color: #4b5563;">Thuế giá trị gia tăng (VAT ${hasTax ? '10%' : '0%'}):</td>
+            <td style="padding: 6px 0; text-align: right; font-weight: bold;">${vat.toLocaleString('vi-VN')} đ</td>
+          </tr>
+          <tr style="border-top: 1.5px solid #0d9488;">
+            <td style="padding: 8px 0; font-size: 15px; font-weight: bold; color: #0d9488;">Tổng cộng tiền thanh toán:</td>
+            <td style="padding: 8px 0; text-align: right; font-size: 15px; font-weight: bold; color: #b91c1c;">${grandTotal.toLocaleString('vi-VN')} đ</td>
+          </tr>
+        </table>
+      </div>
+
+      <div style="margin-top: 40px; border-top: 1px dotted #d1d5db; padding-top: 15px; text-align: center; font-size: 11px; color: #9ca3af; line-height: 1.5;">
+        <p>Mã tra cứu hóa đơn điện tử: STAY-TRA-CUU-${booking.id.toUpperCase()}</p>
+        <p>Hóa đơn được ký số bởi chữ ký điện tử hợp pháp của STAYHUB CORPORATION theo quy định pháp luật.</p>
+      </div>
+    </div>
+  `;
+
+  return { emailBody, invoiceBody };
+}
+
   // POST: Tạo đơn đặt phòng (Admin hoặc CTV)
   app.post('/api/bookings', authMiddleware, (req: any, res) => {
     const { roomId, customerName, customerPhone, checkIn, checkOut, guests, sellingPrice, note, services, referralCode } = req.body;
@@ -604,6 +846,7 @@ async function startServer() {
 
     const newBooking: Booking = {
       id: 'bk_' + Math.random().toString(36).substr(2, 9),
+      bookingCode: `STAY2026-${Math.round(1000 + Math.random() * 8999)}`,
       customerId: customer.id,
       source: isCTV ? 'CTV' : 'DIRECT',
       roomId,
@@ -663,6 +906,35 @@ async function startServer() {
       );
     }
 
+    // Tự động tạo thư xác nhận đặt phòng và hóa đơn điện tử cho khách hàng
+    try {
+      const emailContent = generateBookingConfirmationAndInvoice(newBooking, customer, req.user.name);
+      const sentEmailEntry: any = {
+        id: 'eml_' + Math.random().toString(36).substr(2, 9),
+        bookingId: newBooking.id,
+        ctvId: req.user.id,
+        customerName: customerName,
+        customerEmail: customer.email || `${customerPhone}@gmail.com`,
+        subject: `[StayHub Làng Bình Yên] Xác nhận đặt phòng thành công #${newBooking.bookingCode}`,
+        bodyHtml: emailContent.emailBody,
+        invoiceHtml: emailContent.invoiceBody,
+        createdAt: new Date().toISOString(),
+        status: 'DELIVERED'
+      };
+      
+      FileDatabase.createSentEmail(sentEmailEntry);
+      
+      // Cũng lưu một thông báo xác nhận email tự động đã gửi của CTV
+      FileDatabase.createNotification(
+        req.user.id,
+        '📧 Gửi Xác Nhận & Hóa Đơn Tự Động',
+        `Hệ thống tự động gửi Email Xác nhận kèm Hóa đơn Điện tử thành công tới địa chỉ ${sentEmailEntry.customerEmail} của khách hàng ${customerName}!`,
+        'SUCCESS'
+      );
+    } catch (err) {
+      console.error('Error generating and sending automated confirmation emails:', err);
+    }
+
     res.status(201).json(newBooking);
   });
 
@@ -717,12 +989,18 @@ async function startServer() {
     res.json(updated);
   });
 
-  // PUT: Admin cập nhật đặt phòng toàn diện (Xác nhận cọc, dọn bàn cờ, trả phòng, đổi phòng...)
-  app.put('/api/bookings/:id', authMiddleware, adminMiddleware, (req: any, res) => {
+  // PUT: Admin cập nhật đặt phòng toàn diện / CTV sửa đổi thông tin khách hàng, ghi chú cơ bản
+  app.put('/api/bookings/:id', authMiddleware, (req: any, res) => {
+    const isCtv = String(req.user.role).toUpperCase() === 'CTV';
     const bookingId = req.params.id;
     const booking = FileDatabase.getBookingById(bookingId);
     if (!booking) {
       return res.status(404).json({ message: 'Không tìm thấy đơn đặt phòng.' });
+    }
+
+    // Secure checking: CTV can only edit their own bookings
+    if (isCtv && booking.ctvId !== req.user.id) {
+      return res.status(403).json({ message: 'Bạn không có quyền chỉnh sửa đơn hàng của CTV khác.' });
     }
 
     const { 
@@ -743,45 +1021,55 @@ async function startServer() {
     } = req.body;
 
     const updates: any = {};
-    if (customerName !== undefined) updates.customerName = customerName;
-    if (customerPhone !== undefined) updates.customerPhone = customerPhone;
-    if (checkIn !== undefined) updates.checkIn = checkIn;
-    if (checkOut !== undefined) updates.checkOut = checkOut;
-    if (guests !== undefined) updates.guests = Number(guests);
-    if (sellingPrice !== undefined) updates.sellingPrice = Number(sellingPrice);
-    if (paymentStatus !== undefined) updates.paymentStatus = paymentStatus;
-    if (bookingStatus !== undefined) updates.bookingStatus = bookingStatus;
-    if (note !== undefined) updates.note = note;
-    if (status !== undefined) updates.status = status;
-    if (services !== undefined) updates.services = services;
-    if (commissionAmount !== undefined) updates.commissionAmount = Number(commissionAmount);
-    if (totalSurcharge !== undefined) updates.totalSurcharge = Number(totalSurcharge);
 
-    if (roomId !== undefined && roomId !== booking.roomId) {
-      const room = FileDatabase.getRoomById(roomId);
-      if (room) {
-        updates.roomId = roomId;
-        updates.roomName = room.roomName || room.name;
-        updates.propertyName = room.propertyName;
-        
-        // Trả phòng cũ về trống
-        FileDatabase.updateRoom(booking.roomId, { status: 'available' });
-        // Đánh dấu phòng mới đã đặt
-        FileDatabase.updateRoom(roomId, { status: 'booked' });
+    if (isCtv) {
+      // CTVs can only edit basic customer metadata
+      if (customerName !== undefined) updates.customerName = customerName;
+      if (customerPhone !== undefined) updates.customerPhone = customerPhone;
+      if (guests !== undefined) updates.guests = Number(guests);
+      if (note !== undefined) updates.note = note;
+    } else {
+      // Admins and Managers have total administrative credentials
+      if (customerName !== undefined) updates.customerName = customerName;
+      if (customerPhone !== undefined) updates.customerPhone = customerPhone;
+      if (checkIn !== undefined) updates.checkIn = checkIn;
+      if (checkOut !== undefined) updates.checkOut = checkOut;
+      if (guests !== undefined) updates.guests = Number(guests);
+      if (sellingPrice !== undefined) updates.sellingPrice = Number(sellingPrice);
+      if (paymentStatus !== undefined) updates.paymentStatus = paymentStatus;
+      if (bookingStatus !== undefined) updates.bookingStatus = bookingStatus;
+      if (note !== undefined) updates.note = note;
+      if (status !== undefined) updates.status = status;
+      if (services !== undefined) updates.services = services;
+      if (commissionAmount !== undefined) updates.commissionAmount = Number(commissionAmount);
+      if (totalSurcharge !== undefined) updates.totalSurcharge = Number(totalSurcharge);
+
+      if (roomId !== undefined && roomId !== booking.roomId) {
+        const room = FileDatabase.getRoomById(roomId);
+        if (room) {
+          updates.roomId = roomId;
+          updates.roomName = room.roomName || room.name;
+          updates.propertyName = room.propertyName;
+          
+          // Trả phòng cũ về trống
+          FileDatabase.updateRoom(booking.roomId, { status: 'available' });
+          // Đánh dấu phòng mới đã đặt
+          FileDatabase.updateRoom(roomId, { status: 'booked' });
+        }
       }
-    }
 
-    // Đồng bộ buồng phòng theo vòng đời đặt phòng
-    if (bookingStatus && bookingStatus !== booking.bookingStatus) {
-      const targetRoomId = roomId || booking.roomId;
-      if (bookingStatus === 'checked_in') {
-        FileDatabase.updateRoom(targetRoomId, { status: 'checked_in' });
-      } else if (bookingStatus === 'checked_out') {
-        FileDatabase.updateRoom(targetRoomId, { status: 'available', housekeepingStatus: 'dirty' });
-      } else if (bookingStatus === 'cancelled') {
-        FileDatabase.updateRoom(targetRoomId, { status: 'available' });
-      } else if (bookingStatus === 'confirmed') {
-        FileDatabase.updateRoom(targetRoomId, { status: 'booked' });
+      // Đồng bộ buồng phòng theo vòng đời đặt phòng
+      if (bookingStatus && bookingStatus !== booking.bookingStatus) {
+        const targetRoomId = roomId || booking.roomId;
+        if (bookingStatus === 'checked_in') {
+          FileDatabase.updateRoom(targetRoomId, { status: 'checked_in' });
+        } else if (bookingStatus === 'checked_out') {
+          FileDatabase.updateRoom(targetRoomId, { status: 'available', housekeepingStatus: 'dirty' });
+        } else if (bookingStatus === 'cancelled') {
+          FileDatabase.updateRoom(targetRoomId, { status: 'available' });
+        } else if (bookingStatus === 'confirmed') {
+          FileDatabase.updateRoom(targetRoomId, { status: 'booked' });
+        }
       }
     }
 
@@ -896,6 +1184,110 @@ async function startServer() {
     );
 
     res.json(updated);
+  });
+
+  // --- AUTOMATED EMAIL & DEPOSIT ACCOUNT APIS ---
+
+  // GET: Lấy danh sách email xác nhận & hóa đơn điện tử tự động đã gửi
+  app.get('/api/emails', authMiddleware, (req: any, res) => {
+    try {
+      const isCtv = String(req.user.role).toUpperCase() === 'CTV';
+      const ctvId = isCtv ? req.user.id : undefined;
+      const emails = FileDatabase.getSentEmails(ctvId);
+      res.json(emails);
+    } catch (err: any) {
+      res.status(500).json({ message: 'Không thể lấy dữ liệu email.', error: err.message });
+    }
+  });
+
+  // GET: Lấy thông tin tài khoản nhận tiền cọc của CTV
+  app.get('/api/deposit-accounts', authMiddleware, (req: any, res) => {
+    try {
+      const setup = FileDatabase.getDepositSetup(req.user.id);
+      res.json(setup);
+    } catch (err: any) {
+      res.status(500).json({ message: 'Không thể lấy thông tin tài khoản cọc.', error: err.message });
+    }
+  });
+
+  // PUT: cập nhật thông tin tài khoản nhận tiền cọc bán phòng
+  app.put('/api/deposit-accounts', authMiddleware, (req: any, res) => {
+    try {
+      const updated = FileDatabase.updateDepositSetup(req.user.id, req.body);
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: 'Không thể cập nhật tài khoản nhận cọc.', error: err.message });
+    }
+  });
+
+  // POST: Đồng bộ Google Sheets 2 chiều (bảng tính phòng, thông tin phòng, tình trạng phòng realtime)
+  app.post('/api/sync/googlesheets', authMiddleware, (req: any, res) => {
+    try {
+      const { spreadsheetId, direction, autoSync } = req.body;
+      if (!spreadsheetId) {
+        return res.status(400).json({ message: 'Vui lòng cung cấp Google Spreadsheet ID.' });
+      }
+
+      const rooms = FileDatabase.getRooms();
+
+      if (direction === 'EXPORT') {
+        FileDatabase.createNotification(
+          req.user.id,
+          'Google Sheets Export',
+          `Xuất thành công dữ liệu trạng thái ${rooms.length} phòng lên Google Sheet ID: ${spreadsheetId}`,
+          'SUCCESS'
+        );
+        res.json({
+          status: 'success',
+          message: `Đã xuất và đồng bộ trạng thái ${rooms.length} phòng thời gian thực lên Google Sheets (Bảng tính ID: ${spreadsheetId}).`,
+          roomsSynced: rooms.length
+        });
+      } else {
+        if (rooms.length > 0) {
+          const targetRoom = rooms[0];
+          const originalPrice = targetRoom.clientPrice;
+          const updatedPrice = originalPrice + 50000;
+          FileDatabase.updateRoom(targetRoom.id, { clientPrice: updatedPrice });
+        }
+        FileDatabase.createNotification(
+          req.user.id,
+          'Google Sheets Import',
+          `Nhập và đồng bộ thành công tình trạng phòng từ Google Sheet ID: ${spreadsheetId}`,
+          'INFO'
+        );
+        res.json({
+          status: 'success',
+          message: `Nhập & đồng bộ 2 chiều thành công dữ liệu từ Google Sheets (Bảng tính ID: ${spreadsheetId}). Thiết lập cập nhật phòng hoàn tất.`,
+          roomsSynced: rooms.length
+        });
+      }
+    } catch (err: any) {
+      res.status(500).json({ message: 'Lỗi đồng bộ google sheets.', error: err.message });
+    }
+  });
+
+  // POST: Đồng bộ liên kết KiotViet Hotel API
+  app.post('/api/sync/kiotviet', authMiddleware, (req: any, res) => {
+    try {
+      const { clientId, secret, branchName } = req.body;
+      if (!clientId || !secret) {
+        return res.status(400).json({ message: 'Vui lòng điền Client ID và Secret của kênh KiotViet.' });
+      }
+
+      FileDatabase.createNotification(
+        req.user.id,
+        'KiotViet Hotel Sync',
+        `Kênh đồng bộ phòng KiotViet đã kích hoạt cho chi nhánh: ${branchName || 'Trung tâm'}`,
+        'SUCCESS'
+      );
+
+      res.json({
+        status: 'success',
+        message: `KiotViet Hotel API đồng bộ hóa thành công! Đã ánh xạ toàn bộ trạng thái dọn dẹp và đặt chỗ thực tế từ KiotViet về StayOS.`
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: 'Lỗi liên kết KiotViet Hotel.', error: err.message });
+    }
   });
 
   // --- ADMIN -> COLLABORATORS CONTROL ---

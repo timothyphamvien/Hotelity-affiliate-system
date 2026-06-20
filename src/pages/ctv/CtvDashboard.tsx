@@ -37,6 +37,16 @@ export function CtvDashboard({ onNavigate }: CtvDashboardProps) {
   const [savingBank, setSavingBank] = useState(false);
   const [bankSuccess, setBankSuccess] = useState(false);
 
+  // Deposit Allocation Routes States
+  const [activeSetupTab, setActiveSetupTab] = useState<'payout' | 'deposit'>('payout');
+  const [savingDeposit, setSavingDeposit] = useState(false);
+  const [depositSetup, setDepositSetup] = useState({
+    activeChannel: 'PLATFORM',
+    ctvAccount: { bankName: '', bankAccount: '', bankHolder: '', isVerified: true },
+    platformAccount: { bankName: 'VIETINBANK', bankAccount: '1122334455', bankHolder: 'CONG TY CP LANG BINH YEN' },
+    homeOwnerAccount: { bankName: 'MB BANK', bankAccount: '8888999911', bankHolder: 'HOANG LAM LAM (CHU HOME)' }
+  });
+
   // Gemini AI Recommendation States
   const [aiLoading, setAiLoading] = useState(false);
   const [aiReport, setAiReport] = useState<{
@@ -70,13 +80,14 @@ export function CtvDashboard({ onNavigate }: CtvDashboardProps) {
     try {
       setLoading(true);
       await refreshUser();
-      const [walletData, bookingsData, notifData, referralsData, propertiesData, roomsData] = await Promise.all([
+      const [walletData, bookingsData, notifData, referralsData, propertiesData, roomsData, depositData] = await Promise.all([
         api.getWallet(),
         api.getBookings(),
         api.getNotifications(),
         api.getReferrals(),
         api.getProperties(),
-        api.getRooms()
+        api.getRooms(),
+        api.getDepositAccounts()
       ]);
       setWallet(walletData);
       setBookings(bookingsData);
@@ -84,6 +95,9 @@ export function CtvDashboard({ onNavigate }: CtvDashboardProps) {
       setReferrals(referralsData || []);
       setProperties(propertiesData || []);
       setRooms(roomsData || []);
+      if (depositData) {
+        setDepositSetup(depositData);
+      }
       
       if (walletData) {
         setBankName(walletData.bankName || '');
@@ -699,70 +713,260 @@ export function CtvDashboard({ onNavigate }: CtvDashboardProps) {
 
         {/* Right Column: Bank account link Form */}
         <div className="space-y-6">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-            <div className="flex items-center space-x-2 mb-4">
-              <div className="h-8 w-8 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center">
-                <CreditCard className="h-4 w-4" />
-              </div>
-              <h3 className="font-bold text-slate-800 text-sm uppercase tracking-wider font-display">Tài Khoản Ngân Hàng</h3>
-            </div>
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
             
-            <p className="text-xs text-slate-400 mb-4 leading-relaxed">
-              Vui lòng kết nối tài khoản ngân hàng chính xác để chúng tôi kiểm tra giao dịch đặt cọc và thanh toán hoa hồng cho bạn dễ dàng.
-            </p>
+            {/* Tab selector */}
+            <div className="flex border-b border-slate-100 pb-2">
+              <button
+                type="button"
+                onClick={() => setActiveSetupTab('payout')}
+                className={`flex-1 pb-2 text-xs font-bold text-center transition-all ${
+                  activeSetupTab === 'payout'
+                    ? 'text-indigo-600 border-b-2 border-indigo-600 font-extrabold'
+                    : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                💳 Nhận Hoa Hồng
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSetupTab('deposit')}
+                className={`flex-1 pb-2 text-xs font-bold text-center transition-all ${
+                  activeSetupTab === 'deposit'
+                    ? 'text-indigo-600 border-b-2 border-indigo-600 font-extrabold'
+                    : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                🏡 Kênh Nhận Cọc
+              </button>
+            </div>
 
-            {bankSuccess && (
-              <div className="p-2 mb-4 bg-emerald-50 text-emerald-800 text-xs font-semibold rounded-lg text-center animate-fade-in border border-emerald-100">
-                Đã cập nhật liên kết ngân hàng thành công!
+            {activeSetupTab === 'payout' ? (
+              <div className="space-y-4">
+                <div className="flex items-center space-x-2">
+                  <div className="h-7 w-7 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center">
+                    <CreditCard className="h-3.5 w-3.5" />
+                  </div>
+                  <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider">Cài Đặt Ví Giải Ngân</h3>
+                </div>
+                
+                <p className="text-[11px] text-slate-400 leading-normal">
+                  Vui lòng cung cấp chính xác tài khoản ngân hàng của bạn. Số tiền rút từ Ví Thưởng Hoa Hồng khả dụng sẽ được chuyển khoản tức thì 24/7 về thẻ này.
+                </p>
+
+                {bankSuccess && (
+                  <div className="p-2 bg-emerald-50 text-emerald-800 text-[10px] font-semibold rounded-lg text-center animate-fade-in border border-emerald-100">
+                    Đã đồng bộ ngân hàng thụ hưởng thành công!
+                  </div>
+                )}
+
+                <form onSubmit={handleSaveBank} className="space-y-3">
+                  <div>
+                    <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Tên ngân hàng</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ví dụ: VIETCOMBANK, TECHCOMBANK"
+                      value={bankName}
+                      onChange={(e) => setBankName(e.target.value)}
+                      className="w-full p-2.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 uppercase font-bold text-slate-800 bg-slate-50/50"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Số tài khoản (STK)</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ví dụ: 1012345678"
+                      value={bankAccount}
+                      onChange={(e) => {
+                        setBankAccount(e.target.value);
+                        // Tự động đồng bộ sang CTV cọc nếu chưa thiết lập
+                        if (!depositSetup.ctvAccount.bankAccount) {
+                          setDepositSetup({
+                            ...depositSetup,
+                            ctvAccount: {
+                              ...depositSetup.ctvAccount,
+                              bankAccount: e.target.value
+                            }
+                          });
+                        }
+                      }}
+                      className="w-full p-2.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono font-bold text-slate-800 bg-slate-50/50"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Chủ tài khoản (Không dấu)</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ví dụ: NGUYEN VAN A"
+                      value={bankHolder}
+                      onChange={(e) => {
+                        setBankHolder(e.target.value);
+                        if (!depositSetup.ctvAccount.bankHolder) {
+                          setDepositSetup({
+                            ...depositSetup,
+                            ctvAccount: {
+                              ...depositSetup.ctvAccount,
+                              bankHolder: e.target.value
+                            }
+                          });
+                        }
+                      }}
+                      className="w-full p-2.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 uppercase font-bold text-slate-800 bg-slate-50/50"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={savingBank}
+                    className="w-full py-2 bg-indigo-650 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition uppercase tracking-wider cursor-pointer"
+                  >
+                    {savingBank ? 'Đang cập nhật...' : 'Cập Nhật Tài Khoản Thụ Hưởng'}
+                  </button>
+                </form>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center space-x-2">
+                  <div className="h-7 w-7 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center">
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider">Cấu Hình Tài Khoản Nhận Cọc</h3>
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-slate-400 leading-normal">
+                  Khi khách đặt phòng, bạn có thể tự thiết lập tài khoản và kênh nhận tiền cọc cọc lẻ. Tiền cọc có thể chuyển về CTV, Nền tảng (Làng Bình Yên), hoặc Chủ Home.
+                </p>
+
+                <form onSubmit={async (e) => {
+                  e.preventDefault();
+                  setSavingDeposit(true);
+                  try {
+                    // Sync CTV account from current general bank account if blank
+                    const payload = { ...depositSetup };
+                    if (!payload.ctvAccount.bankName) payload.ctvAccount.bankName = bankName;
+                    if (!payload.ctvAccount.bankAccount) payload.ctvAccount.bankAccount = bankAccount;
+                    if (!payload.ctvAccount.bankHolder) payload.ctvAccount.bankHolder = bankHolder;
+                    
+                    const res = await api.updateDepositAccounts(payload);
+                    setDepositSetup(res);
+                    alert('Cấu hình chia sẻ tuyến nhận cọc khách thành công!');
+                  } catch (err) {
+                    alert('Lỗi cập nhật cấu hình cọc.');
+                  } finally {
+                    setSavingDeposit(false);
+                  }
+                }} className="space-y-3.5">
+                  
+                  {/* Default active gateway channel */}
+                  <div>
+                    <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Mặc định tài khoản thụ hưởng cọc</label>
+                    <select
+                      value={depositSetup.activeChannel}
+                      onChange={(e) => setDepositSetup({ ...depositSetup, activeChannel: e.target.value })}
+                      className="w-full p-2 text-xs border border-slate-200 rounded-lg font-bold text-indigo-950 bg-white"
+                    >
+                      <option value="CTV">Tài khoản CTV cá nhân (Đã Xác Minh)</option>
+                      <option value="PLATFORM">Nền tảng chính (Làng Bình Yên)</option>
+                      <option value="HOME_OWNER">Chủ Home (Chủ khu lưu trú)</option>
+                    </select>
+                  </div>
+
+                  {/* Channel Tab Details boxes */}
+                  <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-2 text-xs font-medium text-slate-700">
+                    
+                    {/* CTV */}
+                    <div className="border-b border-dashed border-slate-200 pb-2">
+                      <span className="text-[9px] font-bold text-emerald-700 uppercase bg-emerald-50 px-1.5 py-0.5 rounded mr-1">CTV (Xác minh)</span>
+                      <div className="grid grid-cols-2 gap-2 mt-1.5">
+                        <input
+                          type="text"
+                          placeholder="Ngân hàng"
+                          value={depositSetup.ctvAccount.bankName || bankName}
+                          onChange={(e) => setDepositSetup({
+                            ...depositSetup,
+                            ctvAccount: { ...depositSetup.ctvAccount, bankName: e.target.value.toUpperCase() }
+                          })}
+                          className="p-1 px-2 border border-slate-200 text-xs rounded uppercase font-bold text-slate-800"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Số tài khoản"
+                          value={depositSetup.ctvAccount.bankAccount || bankAccount}
+                          onChange={(e) => setDepositSetup({
+                            ...depositSetup,
+                            ctvAccount: { ...depositSetup.ctvAccount, bankAccount: e.target.value }
+                          })}
+                          className="p-1 px-2 border border-slate-200 text-xs rounded font-mono font-bold text-slate-800"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Platform Pre-filled details */}
+                    <div className="border-b border-dashed border-slate-200 pb-2 bg-indigo-50/30 p-1.5 rounded">
+                      <span className="text-[9px] font-bold text-blue-700 uppercase bg-blue-50 px-1.5 py-0.5 rounded mr-1">Nền tảng Làng Bình Yên (Mặc định)</span>
+                      <p className="text-[9px] text-slate-600 font-mono mt-1 font-bold">
+                        {depositSetup.platformAccount.bankName} | STK: {depositSetup.platformAccount.bankAccount}
+                      </p>
+                      <p className="text-[9px] text-slate-500 uppercase font-semibold">Chủ sở hữu: {depositSetup.platformAccount.bankHolder}</p>
+                    </div>
+
+                    {/* Owner Customize box */}
+                    <div>
+                      <span className="text-[9px] font-bold text-purple-700 uppercase bg-purple-50 px-1.5 py-0.5 rounded mr-1">Chủ Biệt Thự / Chủ Home</span>
+                      <div className="grid grid-cols-2 gap-1.5 mt-1.5">
+                        <input
+                          type="text"
+                          placeholder="Ngân hàng"
+                          value={depositSetup.homeOwnerAccount.bankName}
+                          onChange={(e) => setDepositSetup({
+                            ...depositSetup,
+                            homeOwnerAccount: { ...depositSetup.homeOwnerAccount, bankName: e.target.value.toUpperCase() }
+                          })}
+                          className="p-1 px-2 border border-slate-200 text-xs rounded uppercase font-bold text-slate-800"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Số tài khoản"
+                          value={depositSetup.homeOwnerAccount.bankAccount}
+                          onChange={(e) => setDepositSetup({
+                            ...depositSetup,
+                            homeOwnerAccount: { ...depositSetup.homeOwnerAccount, bankAccount: e.target.value }
+                          })}
+                          className="p-1 px-2 border border-slate-200 text-xs rounded font-mono font-bold text-slate-800"
+                        />
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Chủ tài khoản (Không dấu)"
+                        value={depositSetup.homeOwnerAccount.bankHolder}
+                        onChange={(e) => setDepositSetup({
+                          ...depositSetup,
+                          homeOwnerAccount: { ...depositSetup.homeOwnerAccount, bankHolder: e.target.value.toUpperCase() }
+                        })}
+                        className="w-full mt-1.5 p-1 px-2 border border-slate-200 text-xs rounded uppercase font-bold text-slate-800"
+                      />
+                    </div>
+
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={savingDeposit}
+                    className="w-full py-2 bg-indigo-650 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition uppercase tracking-wider cursor-pointer"
+                  >
+                    {savingDeposit ? 'Đang lưu...' : 'Đăng Ký Tài Khoản Kênh Nhận Cọc'}
+                  </button>
+                </form>
               </div>
             )}
 
-            <form onSubmit={handleSaveBank} className="space-y-3.5">
-              <div>
-                <label className="text-xs font-semibold text-slate-650 block mb-1">Tên ngân hàng</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ví dụ: VIETCOMBANK, TECHCOMBANK"
-                  value={bankName}
-                  onChange={(e) => setBankName(e.target.value)}
-                  className="w-full p-2.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 uppercase font-medium bg-slate-50/50"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-slate-650 block mb-1">Số tài khoản (STK)</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ví dụ: 1012345678"
-                  value={bankAccount}
-                  onChange={(e) => setBankAccount(e.target.value)}
-                  className="w-full p-2.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono font-semibold bg-slate-50/50"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-slate-650 block mb-1">Chủ tài khoản (Không dấu)</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ví dụ: NGUYEN VAN A"
-                  value={bankHolder}
-                  onChange={(e) => setBankHolder(e.target.value)}
-                  className="w-full p-2.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 uppercase font-bold text-indigo-950 bg-slate-50/50"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={savingBank}
-                id="save-bank-btn"
-                className="w-full mt-2 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-indigo-500 disabled:bg-slate-200 cursor-pointer shadow-sm text-center uppercase tracking-wider font-display"
-              >
-                {savingBank ? 'Đang lưu kết nối...' : 'Liên Kết Thẻ Ngay'}
-              </button>
-            </form>
           </div>
 
           {/* Quick FAQ / Guide */}

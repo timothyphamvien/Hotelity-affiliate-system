@@ -275,8 +275,16 @@ export function AdminRooms() {
               placeholder="Tìm mã số hoặc tên phòng..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="text-xs w-full pl-10 pr-4 py-3 bg-[#F7F3EC] border border-[#E3D8CB] rounded-xl focus:ring-1 focus:ring-[#2F4A3D] focus:outline-none text-[#1F1F1C] font-semibold"
+              className="text-xs w-full pl-10 pr-12 py-3 bg-[#F7F3EC] border border-[#E3D8CB] rounded-xl focus:ring-1 focus:ring-[#2F4A3D] focus:outline-none text-[#1F1F1C] font-semibold"
             />
+            {search && (
+              <button 
+                onClick={() => setSearch('')}
+                className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-rose-700 hover:text-rose-900 text-[10px] font-bold cursor-pointer"
+              >
+                ✕ Xóa
+              </button>
+            )}
           </div>
 
           {/* Property Selector */}
@@ -339,6 +347,33 @@ export function AdminRooms() {
               <option value="inspecting">Đang kiểm soát (Inspecting)</option>
             </select>
           </div>
+        </div>
+
+        {/* 3-Touches Rapid Filter Chips */}
+        <div className="flex flex-wrap items-center gap-1.5 pt-2.5 border-t border-[#F1EFEA]">
+          <span className="text-[10px] uppercase font-bold text-[#8A8177] mr-1 flex items-center gap-1">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#2F4A3D]"></span> Lọc nhanh phòng:
+          </span>
+          {[
+            { value: 'ALL', label: '🌍 Tất cả phòng' },
+            { value: 'available', label: '🟢 Trông trống (Available)' },
+            { value: 'hold', label: '🟡 Đang giữ (Hold)' },
+            { value: 'booked', label: '🔵 Đã đặt (Booked)' },
+            { value: 'cleaning', label: '🧼 Đang dọn dẹp' },
+            { value: 'maintenance', label: '🔧 Đang sửa' },
+          ].map(chip => (
+            <button
+              key={chip.value}
+              onClick={() => setFilterStatus(chip.value)}
+              className={`px-3 py-1 text-[11px] font-bold rounded-full transition cursor-pointer ${
+                filterStatus === chip.value 
+                  ? 'bg-[#2F4A3D] text-white shadow-xs' 
+                  : 'bg-[#F7F3EC] hover:bg-[#EAC294]/30 text-[#5F5A52]'
+              }`}
+            >
+              {chip.label}
+            </button>
+          ))}
         </div>
       </div>
 

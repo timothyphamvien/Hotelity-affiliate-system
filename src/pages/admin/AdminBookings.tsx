@@ -22,6 +22,12 @@ export function AdminBookings() {
   // Selected Booking Details modal
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   
+  // Interactive 3-touches active confirmation modal
+  const [activeActionModal, setActiveActionModal] = useState<{
+    type: 'approve' | 'full_payment' | 'checkout' | 'cancel' | 'checkin';
+    booking: Booking;
+  } | null>(null);
+
   // Rejection modal
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [rejectionReasonInput, setRejectionReasonInput] = useState('');
@@ -68,27 +74,49 @@ export function AdminBookings() {
     alert(`Đã sao chép: ${txt}`);
   };
 
-  // Operation 1: Confirm Deposit (Duyệt cọc, chuyển từ Pending sang Confirmed)
-  const handleConfirmDeposit = async (id: string) => {
-    if (confirm('Xác nhận đã nhận cọc từ CTV/Khách hàng? Đơn hàng sẽ chuyển sang ĐÃ XÁC NHẬN (Confirmed) và giải ngân hoa hồng tạm tính.')) {
-      try {
-        setSubmitting(true);
-        // Duyệt đơn hàng chính
+  // 3-Touches Operations Confirmer (Zero-popup client execution)
+  const executeActiveAction = async () => {
+    if (!activeActionModal) return;
+    const { type, booking } = activeActionModal;
+    const id = booking.id;
+
+    try {
+      setSubmitting(true);
+      if (type === 'approve') {
         await api.updateBookingStatus(id, 'APPROVED');
-        // Phủ trạng thái thanh toán & cuộc gọi thành cong
         await api.updateBooking(id, { 
           paymentStatus: 'deposit_paid', 
           bookingStatus: 'confirmed' 
         });
-        setSelectedBooking(null);
-        await fetchAllData();
-        window.dispatchEvent(new CustomEvent('room-status-updated'));
-        alert('Duyệt cọc đơn hàng và đặt phòng thành công!');
-      } catch (err: any) {
-        alert(err.message || 'Lỗi khi duyệt cọc.');
-      } finally {
-        setSubmitting(false);
+        alert('🎉 Duyệt cọc đặt phòng và giải ngân hoa hồng thành phần công!');
+      } else if (type === 'full_payment') {
+        await api.updateBooking(id, { 
+          paymentStatus: 'paid',
+          paidAmount: booking.sellingPrice + (booking.surcharge || 0)
+        });
+        alert('💰 Tất toán hóa đơn (Đã thu đủ 100%) thành công!');
+      } else if (type === 'checkin') {
+        await api.updateBooking(id, { bookingStatus: 'checked_in' });
+        alert('🔑 Làm thủ tục nhận phòng (Check-in) thành công!');
+      } else if (type === 'checkout') {
+        await api.updateBooking(id, { bookingStatus: 'checked_out' });
+        alert('🚪 Thủ tục trả phòng (Check-out) thành công! Kho phòng đã chuyển sang trạng thái chờ dọn dẹp.');
+      } else if (type === 'cancel') {
+        await api.updateBooking(id, { 
+          bookingStatus: 'cancelled', 
+          paymentStatus: 'unpaid' 
+        });
+        alert('❌ Hủy bỏ đơn hàng thành công, lịch phòng đã được giải phóng.');
       }
+
+      setActiveActionModal(null);
+      setSelectedBooking(null);
+      await fetchAllData();
+      window.dispatchEvent(new CustomEvent('room-status-updated'));
+    } catch (err: any) {
+      alert('Không thể thực thi lệnh: ' + (err.message || 'Lỗi kết nối database'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -115,89 +143,6 @@ export function AdminBookings() {
       alert(err.message || 'Lỗi khi xử lý từ chối.');
     } finally {
       setSubmitting(false);
-    }
-  };
-
-  // Operation 3: Tất toán / Thu đủ (Paid fully)
-  const handleFullPayment = async (b: Booking) => {
-    if (confirm('Khách hàng đã thanh toán 100% hóa đơn? Sát nhập trạng thái ĐÃ THANH TOÁN.')) {
-      try {
-        setSubmitting(true);
-        await api.updateBooking(b.id, { 
-          paymentStatus: 'paid',
-          paidAmount: b.sellingPrice + (b.surcharge || 0)
-        });
-        if (selectedBooking && selectedBooking.id === b.id) {
-          setSelectedBooking(null);
-        }
-        await fetchAllData();
-        alert('Cập nhật trạng thái Thu đủ thành phần công!');
-      } catch (err: any) {
-        alert(err.message || 'Lỗi khi thanh toán.');
-      } finally {
-        setSubmitting(false);
-      }
-    }
-  };
-
-  // Operation 4: Khách nhận phòng (Check-in)
-  const handleCheckIn = async (b: Booking) => {
-    try {
-      setSubmitting(true);
-      await api.updateBooking(b.id, { bookingStatus: 'checked_in' });
-      if (selectedBooking && selectedBooking.id === b.id) {
-        setSelectedBooking(null);
-      }
-      await fetchAllData();
-      window.dispatchEvent(new CustomEvent('room-status-updated'));
-      alert('Đã làm thủ tục Check-in nhận phòng thành công!');
-    } catch (err: any) {
-      alert(err.message || 'Lỗi check-in.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Operation 5: Khách trả phòng (Check-out) -> Phòng bẩn automatic!
-  const handleCheckOut = async (b: Booking) => {
-    if (confirm('Khách hàng bàn giao trả chìa khóa phòng? Trạng thái phòng nghỉ vật lý sẽ tự động đổi sang dọn dẹp vệ sinh buồng phòng (Chưa dọn - Dirty).')) {
-      try {
-        setSubmitting(true);
-        await api.updateBooking(b.id, { bookingStatus: 'checked_out' });
-        if (selectedBooking && selectedBooking.id === b.id) {
-          setSelectedBooking(null);
-        }
-        await fetchAllData();
-        window.dispatchEvent(new CustomEvent('room-status-updated'));
-        alert('Đã checkout trả phòng thành công! Kho phòng đã đánh dấu Chờ dọn dẹp (Dirty).');
-      } catch (err: any) {
-        alert(err.message || 'Lỗi check-out.');
-      } finally {
-        setSubmitting(false);
-      }
-    }
-  };
-
-  // Operation 6: Hủy đơn nhanh
-  const handleCancelBooking = async (b: Booking) => {
-    if (confirm('Bạn muốn hủy đặt phòng này? Phòng vật lý liên kết sẽ được hoàn trả lịch trống ngay.')) {
-      try {
-        setSubmitting(true);
-        await api.updateBooking(b.id, { 
-          bookingStatus: 'cancelled', 
-          paymentStatus: 'unpaid' 
-        });
-        if (selectedBooking && selectedBooking.id === b.id) {
-          setSelectedBooking(null);
-        }
-        await fetchAllData();
-        window.dispatchEvent(new CustomEvent('room-status-updated'));
-        alert('Đặt phòng đã bị hủy và hoàn trả lịch trống.');
-      } catch (err: any) {
-        alert(err.message || 'Lỗi khi hủy đơn.');
-      } finally {
-        setSubmitting(false);
-      }
     }
   };
 
@@ -304,11 +249,19 @@ export function AdminBookings() {
             </span>
             <input
               type="text"
-              placeholder="Tìm theo Mã đơn, CTV, Tên khách..."
+              placeholder="🔍 Tìm nhanh: Số điện thoại, ID, Tên người dùng..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="text-xs w-full pl-9.5 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500 font-medium"
             />
+            {search && (
+              <button 
+                onClick={() => setSearch('')}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-450 hover:text-slate-650 text-xs font-bold cursor-pointer"
+              >
+                ✕ Xóa
+              </button>
+            )}
           </div>
 
           {/* Properties selecting */}
@@ -318,7 +271,7 @@ export function AdminBookings() {
               onChange={(e) => setFilterProperty(e.target.value)}
               className="text-xs w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 font-bold text-slate-700 cursor-pointer"
             >
-              <option value="ALL">Tất cả Cơ sở</option>
+              <option value="ALL">🏢 Tất cả Cơ sở / Homestay</option>
               {properties.map(p => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
@@ -332,10 +285,10 @@ export function AdminBookings() {
               onChange={(e) => setFilterBookingStatus(e.target.value)}
               className="text-xs w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 font-bold text-slate-700 cursor-pointer"
             >
-              <option value="ALL">Tất cả Trạng thái đặt (Booking)</option>
+              <option value="ALL">🛎️ Tất cả trạng thái Booking</option>
               <option value="pending">Chờ phê duyệt (Pending)</option>
               <option value="confirmed">Đã đặt cọc (Confirmed)</option>
-              <option value="checked_in">Đại lưu trú (Checked In)</option>
+              <option value="checked_in">Đang lưu trú (Checked In)</option>
               <option value="checked_out">Đã rời phòng (Checked Out)</option>
               <option value="cancelled">Đã hủy bỏ (Cancelled)</option>
             </select>
@@ -348,13 +301,40 @@ export function AdminBookings() {
               onChange={(e) => setFilterPaymentStatus(e.target.value)}
               className="text-xs w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 font-bold text-slate-700 cursor-pointer"
             >
-              <option value="ALL">Mọi trạng thái thanh toán</option>
-              <option value="unpaid">Chưa cọc / Chưa thanh toán</option>
-              <option value="deposit_paid">Đã cọc một phần (Deposit Paid)</option>
-              <option value="paid">Tất toán toàn bộ (Paid Fully)</option>
-              <option value="refunded">Đã hoàn cọc trả lại (Refunded)</option>
+              <option value="ALL">💰 Mọi tình trạng thanh toán</option>
+              <option value="unpaid">Chưa thanh toán</option>
+              <option value="deposit_paid">Đã cọc một phần</option>
+              <option value="paid">Đã tất toán toàn bộ</option>
+              <option value="refunded">Đã hoàn cọc trả lại</option>
             </select>
           </div>
+        </div>
+
+        {/* Quick Filter Badges (3-Touches Interactive Model) */}
+        <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-slate-100/70">
+          <span className="text-[10px] uppercase font-bold text-slate-400 mr-1 flex items-center gap-1">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#3F7D58]"></span> Chọn nhanh trạng thái đơn cấu hình:
+          </span>
+          {[
+            { value: 'ALL', label: '📋 Hết mọi trạng thái' },
+            { value: 'pending', label: '⏳ Chờ duyệt cọc' },
+            { value: 'confirmed', label: '✅ Đã đặt cọc' },
+            { value: 'checked_in', label: '🛎️ Đang lưu trú' },
+            { value: 'checked_out', label: '🧹 Đã rời phòng & Dọn' },
+            { value: 'cancelled', label: '❌ Đã hủy' },
+          ].map(chip => (
+            <button
+              key={chip.value}
+              onClick={() => setFilterBookingStatus(chip.value)}
+              className={`px-3 py-1 text-[11px] font-black rounded-full transition cursor-pointer ${
+                filterBookingStatus === chip.value 
+                  ? 'bg-indigo-650 text-white shadow-xs' 
+                  : 'bg-slate-100 hover:bg-slate-250 text-slate-650'
+              }`}
+            >
+              {chip.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -481,7 +461,7 @@ export function AdminBookings() {
                     {/* Operation check: Check-in */}
                     {realStatus === 'confirmed' && (
                       <button
-                        onClick={() => handleCheckIn(b)}
+                        onClick={() => setActiveActionModal({ type: 'checkin', booking: b })}
                         className="py-1.5 px-3 bg-orange-600 hover:bg-orange-700 text-white font-bold text-[10px] uppercase rounded-lg transition text-center cursor-pointer"
                       >
                         🔑 Check-in
@@ -491,7 +471,7 @@ export function AdminBookings() {
                     {/* Operation check: Check-out */}
                     {realStatus === 'checked_in' && (
                       <button
-                        onClick={() => handleCheckOut(b)}
+                        onClick={() => setActiveActionModal({ type: 'checkout', booking: b })}
                         className="py-1.5 px-3 bg-slate-800 hover:bg-slate-900 text-white font-bold text-[10px] uppercase rounded-lg transition text-center cursor-pointer"
                       >
                         🚪 Check-out
@@ -501,7 +481,7 @@ export function AdminBookings() {
                     {/* Operation check: Fulfill full payment */}
                     {realPayStatus !== 'paid' && realStatus !== 'cancelled' && (
                       <button
-                        onClick={() => handleFullPayment(b)}
+                        onClick={() => setActiveActionModal({ type: 'full_payment', booking: b })}
                         className="py-1.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-350 font-bold text-[10px] uppercase rounded-lg transition text-center cursor-pointer"
                       >
                         💸 Thu Đủ Tiền
@@ -522,7 +502,7 @@ export function AdminBookings() {
                     {/* Cancel booking option */}
                     {realStatus !== 'cancelled' && realStatus !== 'checked_out' && (
                       <button
-                        onClick={() => handleCancelBooking(b)}
+                        onClick={() => setActiveActionModal({ type: 'cancel', booking: b })}
                         className="py-1.5 px-3 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 font-medium text-[10px] uppercase rounded-lg transition text-center cursor-pointer"
                       >
                         Hủy đơn
@@ -648,7 +628,7 @@ export function AdminBookings() {
                     Không duyệt & Từ chối
                   </button>
                   <button
-                    onClick={() => handleConfirmDeposit(selectedBooking.id)}
+                    onClick={() => setActiveActionModal({ type: 'approve', booking: selectedBooking })}
                     disabled={submitting}
                     className="py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition cursor-pointer text-center"
                   >
@@ -820,6 +800,123 @@ export function AdminBookings() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 3: 3-Touches Zero-popup Interactive Operation Verifier */}
+      {activeActionModal && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 z-55">
+          <div className="bg-white rounded-2xl max-w-sm w-full overflow-hidden shadow-2xl border border-slate-100/90 animate-scale-up text-left">
+            
+            {/* Header branding */}
+            <div className="p-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-emerald-450 animate-ping"></div>
+                <span className="text-[10px] font-black tracking-widest text-[#EAC294] uppercase font-mono">
+                  Mô hình 3-Touches
+                </span>
+              </div>
+              <button 
+                onClick={() => setActiveActionModal(null)}
+                className="text-slate-400 hover:text-white text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full bg-slate-800"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Validation Panel Body */}
+            <div className="p-5 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-indigo-50 text-indigo-700 rounded-lg">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-wide">Yêu cầu ủy thác</h4>
+                  <p className="text-sm font-extrabold text-slate-800">
+                    {activeActionModal.type === 'approve' && 'Phê duyệt cọc đặt chỗ'}
+                    {activeActionModal.type === 'full_payment' && 'Xác nhận thu đủ 100%'}
+                    {activeActionModal.type === 'checkin' && 'Kích hoạt nhận phòng'}
+                    {activeActionModal.type === 'checkout' && 'Xác nhận trả phòng'}
+                    {activeActionModal.type === 'cancel' && 'Hủy đơn hoàn trả phòng trống'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Progress Stepper indicators (Atomic Touchpoints) */}
+              <div className="p-3 bg-slate-50/85 border border-slate-150 rounded-xl space-y-2">
+                <span className="text-[9px] uppercase font-bold text-slate-400 block tracking-wider">
+                  Trạng thái xử lý 3 bước:
+                </span>
+                <div className="flex items-center justify-between font-bold text-[10px] text-slate-500">
+                  <div className="flex items-center gap-1 text-emerald-600">
+                    <span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-[9px]">1</span>
+                    Chọn lệnh
+                  </div>
+                  <div className="w-6 h-px bg-slate-200"></div>
+                  <div className="flex items-center gap-1 text-indigo-600">
+                    <span className="w-4 h-4 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-[9px]">2</span>
+                    Đối soát
+                  </div>
+                  <div className="w-6 h-px bg-slate-200"></div>
+                  <div className="flex items-center gap-1 text-slate-400">
+                    <span className="w-4 h-4 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center font-bold text-[9px]">3</span>
+                    Hoàn tất
+                  </div>
+                </div>
+              </div>
+
+              {/* Info details */}
+              <div className="space-y-2.5 text-xs">
+                <div className="border-b border-slate-100 pb-2 flex justify-between items-center">
+                  <span className="text-slate-400 font-semibold">Tên khách hàng:</span>
+                  <span className="font-extrabold text-slate-800">{activeActionModal.booking.customerName}</span>
+                </div>
+                <div className="border-b border-slate-100 pb-2 flex justify-between items-center">
+                  <span className="text-slate-400 font-semibold">Cơ sở / Homestay:</span>
+                  <span className="font-extrabold text-indigo-750">{activeActionModal.booking.roomName}</span>
+                </div>
+                <div className="border-b border-slate-100 pb-2 flex justify-between items-center">
+                  <span className="text-slate-400 font-semibold">Quỹ thời gian:</span>
+                  <span className="font-semibold text-slate-700 font-mono">
+                    {activeActionModal.booking.checkIn} → {activeActionModal.booking.checkOut}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-sm font-bold bg-[#FEF6EC]/30 p-2 border border-[#EAC294]/30 rounded-lg">
+                  <span className="text-[#3F7D58] font-extrabold">Giá trị đơn hàng:</span>
+                  <span className="font-mono font-black text-rose-600 text-base">
+                    {(activeActionModal.booking.sellingPrice || 0).toLocaleString('vi-VN')} đ
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-[10px] text-slate-450 text-center font-semibold italic bg-slate-50 p-2 rounded-lg">
+                * Hành động sẽ cập nhật tức thời dữ liệu an toàn trên hệ thống.
+              </p>
+            </div>
+
+            {/* Decision panel actions */}
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-2.5">
+              <button
+                onClick={() => setActiveActionModal(null)}
+                className="w-1/2 py-2.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-650 font-bold rounded-xl text-xs transition cursor-pointer text-center"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                onClick={executeActiveAction}
+                disabled={submitting}
+                className="w-1/2 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-extrabold rounded-xl text-xs transition cursor-pointer text-center shadow-md shadow-slate-900/10 flex items-center justify-center gap-1.5"
+              >
+                {submitting ? '...' : (
+                  <>
+                    <CheckCircle className="w-4 h-4 text-emerald-400" />
+                    <span>✓ Xác nhận</span>
+                  </>
+                )}
+              </button>
+            </div>
+
           </div>
         </div>
       )}

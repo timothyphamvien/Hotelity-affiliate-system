@@ -256,36 +256,78 @@ export function AdminCustomers({ onNavigate }: { onNavigate?: (view: string) => 
       </div>
 
       {/* FILTER CONTROLS */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200/85 shadow-sm grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div className="relative">
-          <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className="h-4 w-4 text-slate-400" />
-          </span>
-          <input
-            type="text"
-            placeholder="Tìm theo tên SĐT, email, CCCD..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full text-xs pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C58B5C] font-semibold"
-          />
+      <div className="bg-white p-4 rounded-xl border border-slate-200/85 shadow-sm space-y-3.5">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="relative">
+            <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search className="h-4 w-4 text-slate-400" />
+            </span>
+            <input
+              type="text"
+              placeholder="🔍 Tìm nhanh: SĐT, Tên, CCCD..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full text-xs pl-9 pr-14 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C58B5C] font-semibold"
+            />
+            {search && (
+              <button 
+                onClick={() => setSearch('')}
+                className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-450 hover:text-slate-650 text-xs font-bold cursor-pointer"
+              >
+                ✕ Xóa
+              </button>
+            )}
+          </div>
+
+          <div>
+            <select
+              value={filterTag}
+              onChange={(e) => setFilterTag(e.target.value)}
+              className="w-full text-xs py-2.5 px-3 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C58B5C] font-bold text-slate-700"
+            >
+              <option value="ALL">🔖 Tất cả nhãn nhóm (Tags)</option>
+              {allTags.map((t: any) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="text-xs text-slate-500 flex items-center justify-end px-1 font-bold">
+            Hiển thị: <span className="text-[#C58B5C] font-black ml-1 mr-1">{filteredCustomers.length}</span> danh nhân
+          </div>
         </div>
 
-        <div>
-          <select
-            value={filterTag}
-            onChange={(e) => setFilterTag(e.target.value)}
-            className="w-full text-xs py-2.5 px-3 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#C58B5C] font-bold text-slate-700"
-          >
-            <option value="ALL">🔖 Tất cả nhãn nhóm (Tags)</option>
+        {/* Live Shortcut Tags (3-Touches Architecture Phase 2) */}
+        {allTags.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-100/70">
+            <span className="text-[10px] uppercase font-bold text-slate-400 mr-1 flex items-center gap-1">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#C58B5C]"></span> Phân nhóm gắn nhãn nhanh:
+            </span>
+            <button
+              onClick={() => setFilterTag('ALL')}
+              className={`px-2.5 py-0.5 text-[10px] font-bold rounded transition cursor-pointer ${
+                filterTag === 'ALL' 
+                  ? 'bg-[#C58B5C] text-white' 
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+              }`}
+            >
+              ⭐ VIP & Khác
+            </button>
             {allTags.map((t: any) => (
-              <option key={t} value={t}>{t}</option>
+              <button
+                key={t}
+                onClick={() => setFilterTag(t)}
+                className={`px-2.5 py-0.5 text-[10px] font-bold rounded transition cursor-pointer ${
+                  filterTag === t
+                    ? 'bg-[#C58B5C] text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
+                }`}
+              >
+                #{t}
+              </button>
             ))}
-          </select>
-        </div>
-
-        <div className="text-xs text-slate-500 flex items-center justify-end px-1 font-bold">
-          Hiển thị: <span className="text-slate-800 ml-1 mr-1">{filteredCustomers.length}</span> khách sỉ
-        </div>
+          </div>
+        )}
       </div>
 
       {/* MASTER-DETAIL SPLIT GRID */}

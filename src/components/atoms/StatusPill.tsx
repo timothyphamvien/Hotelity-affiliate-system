@@ -1,15 +1,18 @@
 import React from 'react';
 import { 
   CheckCircle2, AlertTriangle, KeyRound, Clock, 
-  HelpCircle, Sparkles, XCircle, ShieldAlert, Ban 
+  Sparkles, Ban 
 } from 'lucide-react';
 
-interface StatusPillProps {
+export interface StatusPillProps {
   type: 'room' | 'booking' | 'payment';
   status: string;
 }
 
-export function StatusPill({ type, status }: StatusPillProps) {
+/**
+ * ATOM: StatusPill - Visual status presenter
+ */
+export const StatusPill: React.FC<StatusPillProps> = ({ type, status }) => {
   const norm = String(status || '').toLowerCase().trim();
 
   if (type === 'room') {
@@ -72,7 +75,7 @@ export function StatusPill({ type, status }: StatusPillProps) {
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-gray-105 text-gray-700 border border-gray-200">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-750 border border-gray-250">
             {status}
           </span>
         );
@@ -148,4 +151,4 @@ export function StatusPill({ type, status }: StatusPillProps) {
         </span>
       );
   }
-}
+};

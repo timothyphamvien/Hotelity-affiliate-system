@@ -43,6 +43,8 @@ export function CtvRooms({ onBookRoom }: CtvRoomsProps) {
   const [roomCheckIn, setRoomCheckIn] = useState<{ [roomId: string]: string }>({});
   const [roomCheckOut, setRoomCheckOut] = useState<{ [roomId: string]: string }>({});
   const [calendarMonth, setCalendarMonth] = useState<string>('2026-06'); // Default June 2026 (based on current 2026-06-10 metadata)
+  const [calendarStartDate, setCalendarStartDate] = useState<string>('2026-06-10');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState<boolean>(false);
 
   // Video popup
   const [activeVideo, setActiveVideo] = useState<string | null>(null);
@@ -222,7 +224,7 @@ export function CtvRooms({ onBookRoom }: CtvRoomsProps) {
 
   const getNext10Days = () => {
     const days = [];
-    const baseDate = new Date('2026-06-10');
+    const baseDate = new Date(calendarStartDate || '2026-06-10');
     const dayLabels = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
     for (let i = 0; i < 10; i++) {
       const d = new Date(baseDate);
@@ -280,211 +282,216 @@ export function CtvRooms({ onBookRoom }: CtvRoomsProps) {
           <span>🎯 {filteredRooms.length} phòng phù hợp</span>
         </div>
       </div>
-
-      {/* Filter Options */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-        {/* Row 1: Basic Filters & Dates */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4 font-sans">
+        {/* Unified Search Row (Agoda/Airbnb Style) */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
           
-          {/* Text Search */}
-          <div className="relative">
-            <label className="text-xs font-bold text-slate-600 block mb-1">Cơ sở lưu trú</label>
+          {/* Col 1: Text Search (5/12 cols) */}
+          <div className="md:col-span-4 relative text-left">
+            <label className="text-[10px] uppercase font-black text-slate-500 block mb-1">Cơ sở & Địa danh</label>
             <div className="relative">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
               <input
                 type="text"
-                placeholder="Nhập tên căn, vị trí,..."
+                placeholder="Nha Trang, Đà Lạt, Villa biển..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full text-xs pl-9 pr-3 py-2 border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500 font-medium"
+                className="w-full text-xs pl-9 pr-3 py-2.5 border border-slate-200 rounded-xl focus:ring-1 focus:ring-indigo-500 font-bold text-slate-800 bg-slate-50/50"
               />
             </div>
           </div>
 
-          {/* Property type selection */}
-          <div>
-            <label className="text-xs font-bold text-slate-600 block mb-1">Loại hình</label>
-            <select
-              value={rType}
-              onChange={(e) => setRType(e.target.value)}
-              className="w-full text-xs p-2 border border-slate-200 rounded-lg bg-white font-bold text-slate-700 focus:ring-1 focus:ring-indigo-500"
-            >
-              <option value="ALL">Tất cả loại hình</option>
-              <option value="VILLA">Biệt thự Villa</option>
-              <option value="HOMESTAY">Homestay</option>
-              <option value="BUNGALOW">Bungalow sinh thái</option>
-              <option value="RESORT">Resort khu nghỉ dưỡng</option>
-              <option value="HOTEL">Khách sạn Hotel</option>
-              <option value="MOTEL">Nhà nghỉ Motel</option>
-            </select>
-          </div>
-
-          {/* Date range check-in and check-out */}
-          <div>
-            <label className="text-xs font-bold text-slate-600 block mb-1">Check-in nhận phòng</label>
-            <div className="relative">
-              <Calendar className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-              <input
-                type="date"
-                min={new Date().toISOString().split('T')[0]}
-                value={checkIn}
-                onChange={(e) => setCheckIn(e.target.value)}
-                className="w-full text-xs pl-9 pr-3 py-2 border border-slate-200 rounded-lg font-mono font-semibold"
-              />
+          {/* Col 2: Date Picker Combo (4/12 cols) */}
+          <div className="md:col-span-4 text-left">
+            <label className="text-[10px] uppercase font-black text-slate-500 block mb-1">Thời gian lưu trú (Check-in ➜ Out)</label>
+            <div className="grid grid-cols-2 gap-1 bg-slate-50/50 p-1 border border-slate-200 rounded-xl">
+              <div className="relative">
+                <input
+                  type="date"
+                  min={new Date().toISOString().split('T')[0]}
+                  value={checkIn}
+                  onChange={(e) => setCheckIn(e.target.value)}
+                  className="w-full text-[10px] p-2 bg-transparent font-mono font-black text-slate-800 border-0 focus:ring-0"
+                  placeholder="Nhận phòng"
+                  title="Ngày nhận phòng"
+                />
+              </div>
+              <div className="relative border-l border-slate-200 pl-1">
+                <input
+                  type="date"
+                  min={checkIn || new Date().toISOString().split('T')[0]}
+                  value={checkOut}
+                  onChange={(e) => setCheckOut(e.target.value)}
+                  className="w-full text-[10px] p-2 bg-transparent font-mono font-black text-slate-800 border-0 focus:ring-0"
+                  placeholder="Trả phòng"
+                  title="Ngày trả phòng"
+                />
+              </div>
             </div>
           </div>
 
-          <div>
-            <label className="text-xs font-bold text-slate-600 block mb-1">Check-out trả phòng</label>
-            <div className="relative">
-              <Calendar className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-              <input
-                type="date"
-                min={checkIn || new Date().toISOString().split('T')[0]}
-                value={checkOut}
-                onChange={(e) => setCheckOut(e.target.value)}
-                className="w-full text-xs pl-9 pr-3 py-2 border border-slate-200 rounded-lg font-mono font-semibold"
-              />
-            </div>
-          </div>
-
-        </div>
-
-        {/* Row 2: Advanced sub-filtering (Price Range, Guest Capacity, Reset) */}
-        <div className="pt-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end">
-          
-          {/* Min Price */}
-          <div>
-            <label className="text-xs font-bold text-slate-600 block mb-1">Khoảng giá tối thiểu (đề xuất)</label>
-            <input
-              type="number"
-              placeholder="Từ (đ): Ví dụ 500000"
-              value={priceMinFilter}
-              onChange={(e) => setPriceMinFilter(e.target.value)}
-              className="w-full text-xs p-2 border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500 font-mono font-bold text-indigo-700 bg-white"
-            />
-          </div>
-
-          {/* Max Price */}
-          <div>
-            <label className="text-xs font-bold text-slate-600 block mb-1">Khoảng giá tối đa (đề xuất)</label>
-            <input
-              type="number"
-              placeholder="Đến (đ): Ví dụ 3000000"
-              value={priceMaxFilter}
-              onChange={(e) => setPriceMaxFilter(e.target.value)}
-              className="w-full text-xs p-2 border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500 font-mono font-bold text-indigo-700 bg-white"
-            />
-          </div>
-
-          {/* Guest Capacity minimum */}
-          <div>
-            <label className="text-xs font-bold text-slate-600 block mb-1">Số lượng khách tối thiểu</label>
+          {/* Col 3: Capacity guests (2/12 cols) */}
+          <div className="md:col-span-2 text-left">
+            <label className="text-[10px] uppercase font-black text-slate-500 block mb-1">Số lượng khách</label>
             <select
               value={guestsFilter}
               onChange={(e) => setGuestsFilter(e.target.value)}
-              className="w-full text-xs p-2 border border-slate-200 rounded-lg bg-white font-bold text-slate-700 focus:ring-1 focus:ring-indigo-500"
+              className="w-full text-xs p-2.5 border border-slate-200 rounded-xl bg-slate-50/50 font-bold text-slate-700 focus:ring-1 focus:ring-indigo-500"
             >
-              <option value="">Không giới hạn sức chứa</option>
-              <option value="1">Từ 1 khách trở lên</option>
-              <option value="2">Từ 2 khách trở lên</option>
-              <option value="4">Từ 4 khách trở lên</option>
-              <option value="6">Từ 6 khách trở lên</option>
-              <option value="8">Từ 8 khách – Đoàn lớn</option>
+              <option value="">👤 Mọi sức chứa</option>
+              <option value="1">1+ khách</option>
+              <option value="2">2+ khách</option>
+              <option value="4">4+ khách</option>
+              <option value="6">6+ khách</option>
+              <option value="10">10+ khách (Đoàn)</option>
             </select>
           </div>
 
-          {/* Reset Action */}
-          <div>
+          {/* Col 4: Quick Buttons (2/12 cols) */}
+          <div className="md:col-span-2 flex space-x-1.5">
             <button
-              onClick={handleClearFilters}
-              id="btn-wipe-filters"
-              className="w-full py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold text-xs rounded-lg transition-all cursor-pointer font-sans"
+              type="button"
+              onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+              className={`flex-1 py-2.5 text-xs font-black rounded-xl border transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                showAdvancedFilters || rType !== 'ALL' || priceMinFilter || priceMaxFilter || roomTypeFilter !== 'ALL' || selectedAmenities.length > 0
+                  ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                  : 'bg-white border-slate-200 text-slate-650 hover:bg-slate-50'
+              }`}
             >
-              🧹 Làm mới bộ lọc
+              🎛️ {showAdvancedFilters ? 'Đóng' : 'Lọc thêm'}
+            </button>
+            <button
+              type="button"
+              onClick={handleClearFilters}
+              title="Làm mới bộ lọc về mặc định"
+              className="p-2.5 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 rounded-xl transition-all cursor-pointer flex items-center justify-center"
+            >
+              🧹
             </button>
           </div>
 
         </div>
 
-        {/* Row 3: Advanced amenities and Room Types */}
-        <div className="pt-3.5 border-t border-slate-100 grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-          
-          {/* Room Type Selector */}
-          <div className="lg:col-span-6 space-y-1.5">
-            <span className="text-xs font-bold text-slate-600 block">Dạng Phòng & Cấu trúc chính</span>
-            <div className="flex flex-wrap gap-1.5">
-              {[
-                { id: 'ALL', label: '🏡 Tất cả dạng' },
-                { id: 'STUDIO', label: '🛋️ Studio / Cabin đơn' },
-                { id: '1_BEDROOM', label: '🌻 1 Phòng Ngủ / Bungalow' },
-                { id: '2_BEDROOM', label: '👑 Biệt thự / Luxury / 2+ PN' }
-              ].map((type) => (
-                <button
-                  key={type.id}
-                  type="button"
-                  onClick={() => setRoomTypeFilter(type.id)}
-                  className={`text-xs py-1.5 px-3 rounded-lg border font-bold transition-all cursor-pointer ${
-                    roomTypeFilter === type.id
-                      ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs hover:bg-indigo-700'
-                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900'
-                  }`}
+        {/* Collapsible Row: Advanced sub-filtering (Price Range, Property Type, Room Types, Amenities) */}
+        {showAdvancedFilters && (
+          <div className="pt-4 border-t border-dashed border-slate-200 animate-slide-in space-y-4 text-left">
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+              
+              {/* Loai hinh selection (3/12 cols) */}
+              <div className="md:col-span-4">
+                <label className="text-[10px] uppercase font-black text-slate-500 block mb-1">Loại hình lưu trú</label>
+                <select
+                  value={rType}
+                  onChange={(e) => setRType(e.target.value)}
+                  className="w-full text-xs p-2.5 border border-slate-200 rounded-lg bg-white font-bold text-slate-700 focus:ring-1 focus:ring-indigo-500"
                 >
-                  {type.label}
-                </button>
-              ))}
+                  <option value="ALL">Tất cả loại hình du lịch</option>
+                  <option value="VILLA">🏠 Biệt thự Villa</option>
+                  <option value="HOMESTAY">🌻 Homestay bản địa</option>
+                  <option value="BUNGALOW">⛰️ Bungalow sinh thái</option>
+                  <option value="RESORT">🌴 Resort nghỉ dưỡng cao cấp</option>
+                  <option value="HOTEL">🏢 Khách sạn Hotel</option>
+                </select>
+              </div>
+
+              {/* Price bracket (4/12 cols) */}
+              <div className="md:col-span-4">
+                <label className="text-[10px] uppercase font-black text-slate-500 block mb-1">Khoảng giá bán CTV đề xuất (đ/đêm)</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="number"
+                    placeholder="Từ (đ)"
+                    value={priceMinFilter}
+                    onChange={(e) => setPriceMinFilter(e.target.value)}
+                    className="w-full text-xs p-2.5 border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500 font-mono font-bold text-slate-700 bg-white"
+                  />
+                  <input
+                    type="number"
+                    placeholder="Đến (đ)"
+                    value={priceMaxFilter}
+                    onChange={(e) => setPriceMaxFilter(e.target.value)}
+                    className="w-full text-xs p-2.5 border border-slate-200 rounded-lg focus:ring-1 focus:ring-indigo-500 font-mono font-bold text-indigo-700 bg-white"
+                  />
+                </div>
+              </div>
+
+              {/* Room Structure Filters (5/12 cols) */}
+              <div className="md:col-span-4">
+                <label className="text-[10px] uppercase font-black text-slate-500 block mb-1.5">Cấu trúc chính dạng phòng</label>
+                <div className="flex flex-wrap gap-1">
+                  {[
+                    { id: 'ALL', label: 'Tất cả' },
+                    { id: 'STUDIO', label: 'Studio / Đơn' },
+                    { id: '1_BEDROOM', label: '1 PN / Bungalow' },
+                    { id: '2_BEDROOM', label: 'Biệt thự / 2+ PN' }
+                  ].map((type) => (
+                    <button
+                      key={type.id}
+                      type="button"
+                      onClick={() => setRoomTypeFilter(type.id)}
+                      className={`text-[11px] py-1.5 px-2.5 rounded-lg border font-bold transition-all cursor-pointer ${
+                        roomTypeFilter === type.id
+                          ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
+                          : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      {type.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+            </div>
+
+            {/* Amenities Multi-select checklist */}
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-150">
+              <span className="text-[10px] uppercase font-bold text-slate-500 block mb-2">⚡ Tiện ích đặc thù yêu cầu (Chọn nhiều):</span>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { id: 'Wifi', label: '📶 Wifi căn hộ' },
+                  { id: 'Pool', label: '🏊 Hồ bơi riêng' },
+                  { id: 'AC', label: '❄️ Máy điều hòa' },
+                  { id: 'Bath', label: '🛁 Bồn tắm sành' },
+                  { id: 'Kitchen', label: '🍳 Bếp nấu ăn' }
+                ].map((amenity) => {
+                  const isSelected = selectedAmenities.includes(amenity.id);
+                  return (
+                    <button
+                      key={amenity.id}
+                      type="button"
+                      onClick={() => {
+                        if (isSelected) {
+                          setSelectedAmenities(selectedAmenities.filter(item => item !== amenity.id));
+                        } else {
+                          setSelectedAmenities([...selectedAmenities, amenity.id]);
+                        }
+                      }}
+                      className={`text-xs py-1.5 px-3 rounded-lg border font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                        isSelected
+                          ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-55'
+                      }`}
+                    >
+                      <span>{amenity.label}</span>
+                      {isSelected && <span className="text-[9px] bg-emerald-800 text-white px-1 rounded-full">✓</span>}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
-
-          {/* Amenities Multi-select Toggles */}
-          <div className="lg:col-span-6 space-y-1.5">
-            <span className="text-xs font-bold text-slate-600 block">⚡ Lọc theo tiện ích (Đồng thời)</span>
-            <div className="flex flex-wrap gap-1.5">
-              {[
-                { id: 'Wifi', label: '📶 Wifi miễn phí' },
-                { id: 'Pool', label: '🏊 Hồ bơi / Tràn bờ' },
-                { id: 'AC', label: '❄️ Điều hòa / Máy lạnh' },
-                { id: 'Bath', label: '🛁 Bồn tắm gỗ/sứ' },
-                { id: 'Kitchen', label: '🍳 Gian bếp nấu' }
-              ].map((amenity) => {
-                const isSelected = selectedAmenities.includes(amenity.id);
-                return (
-                  <button
-                    key={amenity.id}
-                    type="button"
-                    onClick={() => {
-                      if (isSelected) {
-                        setSelectedAmenities(selectedAmenities.filter(item => item !== amenity.id));
-                      } else {
-                        setSelectedAmenities([...selectedAmenities, amenity.id]);
-                      }
-                    }}
-                    className={`text-xs py-1.5 px-3 rounded-lg border font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                      isSelected
-                        ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs hover:bg-emerald-700'
-                        : 'bg-slate-50 border-slate-200 text-slate-605 hover:bg-slate-100 hover:text-slate-800'
-                    }`}
-                  >
-                    <span>{amenity.label}</span>
-                    {isSelected && <span className="text-[10px] bg-emerald-800/80 text-white px-1.5 rounded-full">✓</span>}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-        </div>
+        )}
 
         {datesError && (
-          <p className="text-xs text-rose-600 font-semibold mt-1">
+          <p className="text-xs text-rose-600 font-semibold mt-1 text-left">
             ⚠️ {datesError}
           </p>
         )}
 
         {checkIn && checkOut && !datesError && (
-          <p className="text-xs text-indigo-700 bg-indigo-50 border border-indigo-100 p-2.5 rounded-lg flex items-center font-semibold">
+          <p className="text-xs text-indigo-700 bg-indigo-50 border border-indigo-100 p-2.5 rounded-lg flex items-center font-semibold text-left">
             <span className="h-2 w-2 rounded-full bg-indigo-600 animate-pulse mr-2"></span>
-            Lịch bận đã được tự động loại trừ trong tầm lưu trú: <b className="font-mono mx-1">{checkIn}</b> tới <b className="font-mono mx-1">{checkOut}</b>
+            Tổng quan đã lọc lịch bận trong tầm lưu trú: <b className="font-mono mx-1">{checkIn}</b> tới <b className="font-mono mx-1">{checkOut}</b>
           </p>
         )}
       </div>
@@ -741,11 +748,59 @@ export function CtvRooms({ onBookRoom }: CtvRoomsProps) {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-3 gap-2">
             <div>
               <span className="text-[10px] bg-indigo-150 text-indigo-700 font-extrabold px-3 py-1 rounded-full uppercase tracking-wider">Lịch Trống & Bận Chi Tiết (10 Ngày)</span>
-              <p className="text-[11px] text-slate-400 mt-1">Trực quan hóa trạng thái trống 🟢 hoặc bận 🔴 trong 10 ngày tiếp theo (bắt đầu từ hôm nay). Click trực tiếp ô Trống để đặt phòng tức thì.</p>
+              <p className="text-[11px] text-slate-400 mt-1">Trực quan hóa trạng thái trống 🟢 hoặc bận 🔴 trong 10 ngày tiếp theo. Click trực tiếp ô Trống để đặt phòng tức thì.</p>
             </div>
             <div className="flex items-center space-x-3.5 text-xs font-bold text-slate-500 font-mono">
-              <span className="inline-flex items-center"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500 mr-1.5"></span>Trống (Đặt mẫu)</span>
-              <span className="inline-flex items-center"><span className="h-2.5 w-2.5 rounded-full bg-rose-500 mr-1.5"></span>Đã Đặt (Bận)</span>
+              <span className="inline-flex items-center"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500 mr-1.5"></span>Trống</span>
+              <span className="inline-flex items-center"><span className="h-2.5 w-2.5 rounded-full bg-rose-500 mr-1.5"></span>Bận</span>
+            </div>
+          </div>
+
+          {/* Dynamic Day-by-Day Date Filtering Controls */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">
+            <div className="flex items-center space-x-3">
+              <span className="font-bold text-slate-700 flex items-center">
+                <Calendar className="h-3.5 w-3.5 text-indigo-600 mr-1.5" />
+                Mốc ngày bắt đầu tra cứu:
+              </span>
+              <input 
+                type="date" 
+                value={calendarStartDate} 
+                onChange={(e) => setCalendarStartDate(e.target.value)} 
+                className="p-1.5 px-3 border border-slate-200 rounded-lg text-xs font-mono font-black bg-white shadow-7xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <button 
+                type="button"
+                onClick={() => {
+                  const prev = new Date(calendarStartDate);
+                  prev.setDate(prev.getDate() - 10);
+                  setCalendarStartDate(prev.toISOString().split('T')[0]);
+                }}
+                className="bg-white hover:bg-slate-105 border border-slate-250 p-1.5 px-3 rounded-lg text-[11px] font-black text-slate-705 shadow-7xs transition active:scale-95"
+              >
+                ⬅️ 10 ngày trước
+              </button>
+              <button 
+                type="button"
+                onClick={() => setCalendarStartDate('2026-06-10')}
+                className="bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 p-1.5 px-3 rounded-lg text-[11px] font-black text-indigo-700 shadow-7xs transition active:scale-95"
+                title="Khôi phục về mốc ban đầu"
+              >
+                Hôm nay (10/06)
+              </button>
+              <button 
+                type="button"
+                onClick={() => {
+                  const next = new Date(calendarStartDate);
+                  next.setDate(next.getDate() + 10);
+                  setCalendarStartDate(next.toISOString().split('T')[0]);
+                }}
+                className="bg-white hover:bg-slate-105 border border-slate-250 p-1.5 px-3 rounded-lg text-[11px] font-black text-slate-705 shadow-7xs transition active:scale-95"
+              >
+                10 ngày sau ➡️
+              </button>
             </div>
           </div>
 

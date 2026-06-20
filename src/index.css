@@ -18,6 +18,27 @@
   --color-brand-danger: #B14A3B;
   --color-brand-info: #406E8E;
   --color-brand-border: #E3D8CB;
+
+  --color-indigo-650: #493fcb;
+  --color-indigo-750: #3730a3;
+  --color-indigo-950: #1e1b4b;
+  --color-indigo-150: #e0e7ff;
+  --color-indigo-250: #c7d2fe;
+  --color-indigo-505: #6366f1;
+  --color-slate-105: #f1f5f9;
+  --color-slate-250: #cbd5e1;
+  --color-slate-350: #94a3b8;
+  --color-slate-405: #94a3b8;
+  --color-slate-450: #64748b;
+  --color-slate-705: #475569;
+  --color-slate-755: #334155;
+  --color-slate-750: #334155;
+  --color-slate-850: #1e293b;
+  --color-emerald-250: #a7f3d0;
+  --color-emerald-705: #047857;
+  --color-rose-250: #fecdd3;
+  --color-amber-250: #fde68a;
+  --color-indigo-905: #312e81;
 }
 
 body {

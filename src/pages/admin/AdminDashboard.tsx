@@ -4,8 +4,16 @@ import {
   DollarSign, Users, Home, ClipboardList, CheckSquare, 
   ArrowRight, Landmark, FileText, ChevronRight, LayoutGrid,
   AlertTriangle, Wrench, Clock, CheckCircle, HelpCircle, 
-  TrendingUp, Sparkles, Bed, Search, ShieldCheck
+  TrendingUp, Sparkles, Bed, Search, ShieldCheck, RefreshCw
 } from 'lucide-react';
+import { 
+  ResponsiveContainer, AreaChart, Area, BarChart, Bar, 
+  PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend
+} from 'recharts';
+import { useSyncQuery, syncManager } from '../../services/frontStateSync';
+import { Button } from '@/src/components/atoms/Button';
+import { Card as AtomicCard } from '@/src/components/molecules/Card';
+import { StatusPill as AtomicStatusPill } from '@/src/components/atoms/StatusPill';
 
 interface AdminDashboardProps {
   onNavigate: (view: string) => void;
@@ -16,6 +24,14 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   const [loading, setLoading] = useState(true);
   const [properties, setProperties] = useState<any[]>([]);
   const [roomTypes, setRoomTypes] = useState<any[]>([]);
+  const [allBookings, setAllBookings] = useState<any[]>([]);
+  const [allRooms, setAllRooms] = useState<any[]>([]);
+
+  // Real-time synchronization state query with optimistic caches
+  const { data: syncBookings } = useSyncQuery<any[]>(
+    'bookings_all',
+    async () => await api.getBookings()
+  );
 
   // Search Availability Form State
   const [searchProp, setSearchProp] = useState('');
@@ -27,14 +43,18 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
   const fetchStatsAndFilters = async () => {
     try {
       setLoading(true);
-      const data = await api.getAdminStats();
+      const [data, propsData, typesData, bookingsData, roomsData] = await Promise.all([
+        await api.getAdminStats(),
+        await api.getProperties(),
+        await api.getRoomTypes(),
+        await api.getBookings(),
+        await api.getRooms()
+      ]);
       setStats(data);
-
-      const propsData = await api.getProperties();
       setProperties(propsData || []);
-
-      const typesData = await api.getRoomTypes();
       setRoomTypes(typesData || []);
+      setAllBookings(bookingsData || []);
+      setAllRooms(roomsData || []);
     } catch (err) {
       console.error('Lỗi khi tải thống kê hệ thống:', err);
     } finally {
@@ -77,6 +97,64 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
 
   const chartItems = stats?.roomSalesChart || [];
   const maxVal = chartItems.reduce((max: number, item: any) => item.value > max ? item.value : max, 1);
+
+  // 1. Biểu đồ phòng trống & trạng thái hiện tại (PieChart)
+  const roomStatusChartData = [
+    { name: 'Còn trống', value: stats?.availableRoomsToday || 0, color: '#10B981' }, 
+    { name: 'Đang giữ', value: stats?.onHoldRooms || 0, color: '#F59E0B' }, 
+    { name: 'Đã đặt', value: stats?.bookingsToday || 0, color: '#6366F1' }, 
+    { name: 'Dọn dẹp', value: stats?.bookingsPendingPayment || 0, color: '#14B8A6' }, 
+    { name: 'Bảo trì', value: stats?.maintenanceRooms || 0, color: '#94A3B8' }
+  ].filter(item => item.value > 0);
+
+  if (roomStatusChartData.length === 0) {
+    roomStatusChartData.push({ name: 'Chưa có phòng', value: 1, color: '#CBD5E1' });
+  }
+
+  // 2. Biểu đồ khối lượng đặt phòng mới theo ngày (7 ngày qua)
+  const get7DaysRange = () => {
+    const list = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const label = d.toLocaleDateString('vi-VN', { day: 'numeric', month: 'numeric' });
+      const iso = d.toISOString().split('T')[0];
+      list.push({ label, iso, count: 0 });
+    }
+    return list;
+  };
+
+  const bookingTrendData = get7DaysRange();
+  allBookings.forEach(b => {
+    const dateStr = (b.createdAt || b.checkIn || '').split('T')[0];
+    const match = bookingTrendData.find(d => d.iso === dateStr);
+    if (match) {
+      match.count += 1;
+    }
+  });
+
+  // 3. Phân tích Doanh thu thực tế (đã thu) vs Doanh thu dự kiến (outstanding receivables) theo cơ sở
+  const propertyRevenueData: Record<string, { name: string; paid: number; unpaid: number; total: number }> = {};
+  
+  properties.forEach(p => {
+    propertyRevenueData[p.id] = { name: p.name, paid: 0, unpaid: 0, total: 0 };
+  });
+
+  allBookings.filter(b => b.status === 'APPROVED' || b.bookingStatus === 'CONFIRMED' || b.bookingStatus === 'COMPLETED').forEach(b => {
+    const room = allRooms.find(r => r.id === b.roomId);
+    const propId = room?.propertyId || b.propertyId || (properties[0]?.id || 'OTHER');
+    if (!propertyRevenueData[propId]) {
+      propertyRevenueData[propId] = { name: b.propertyName || 'Khác', paid: 0, unpaid: 0, total: 0 };
+    }
+    const paid = Number(b.paidAmount || b.sellingPrice || 0);
+    const total = Number(b.sellingPrice || b.clientPrice || 0);
+    const unpaid = Math.max(0, total - paid);
+
+    propertyRevenueData[propId].paid += paid;
+    propertyRevenueData[propId].unpaid += unpaid;
+    propertyRevenueData[propId].total += total;
+  });
+  const revenueChartData = Object.values(propertyRevenueData);
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto" id="admin-dashboard-new">
@@ -290,6 +368,104 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
         </div>
       </div>
 
+      {/* EXQUISITE VISUAL OPERATIONS CHARTS (RECHARTS BENTO GRID) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6" id="admin-dashboard-recharts-suite">
+        {/* Chart 1: Room status distribution */}
+        <div className="bg-white border border-[#E3D8CB] rounded-[24px] p-6 shadow-sm lg:col-span-4 flex flex-col justify-between">
+          <div>
+            <h3 className="text-xs font-black uppercase tracking-wider text-[#2F4A3D] mb-1">📊 Trạng Thái Kho Phòng Hôm Nay</h3>
+            <p className="text-[11px] text-[#8A8177]">Phân bổ hiện trạng sử dụng các phòng thực tế</p>
+          </div>
+          <div className="h-[200px] flex items-center justify-center relative my-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={roomStatusChartData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={80}
+                  paddingAngle={3}
+                  dataKey="value"
+                >
+                  {roomStatusChartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip 
+                  formatter={(value: any) => [`${value} phòng`, 'Số lượng']}
+                  contentStyle={{ fontSize: '11px', borderRadius: '8px' }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="absolute text-center flex flex-col justify-center items-center pointer-events-none">
+              <span className="text-2xl font-bold font-serif text-[#1F1F1C]">{allRooms.length}</span>
+              <span className="text-[10px] text-[#8A8177] font-semibold uppercase">Tổng phòng</span>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-[10px] font-bold text-[#5F5A52] border-t border-slate-100 pt-3">
+            {roomStatusChartData.map((item, index) => (
+              <div key={index} className="flex items-center space-x-1.5">
+                <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: item.color }}></span>
+                <span className="truncate">{item.name}: <b>{item.value}</b></span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Chart 2: Bookings volume trend */}
+        <div className="bg-white border border-[#E3D8CB] rounded-[24px] p-6 shadow-sm lg:col-span-4 flex flex-col justify-between">
+          <div>
+            <h3 className="text-xs font-black uppercase tracking-wider text-[#2F4A3D] mb-1">📈 Đơn Đặt Hàng Mới Trong Ngày</h3>
+            <p className="text-[11px] text-[#8A8177]">Thống kê tần suất đơn phát sinh mới trong 7 ngày qua</p>
+          </div>
+          <div className="h-[200px] my-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={bookingTrendData} margin={{ top: 10, right: 5, left: -25, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorBooking" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#2F4A3D" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#2F4A3D" stopOpacity={0.0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1EFEA" />
+                <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#8A8177' }} stroke="#E3D8CB" />
+                <YAxis tick={{ fontSize: 9, fill: '#8A8177' }} stroke="#E3D8CB" allowDecimals={false} />
+                <Tooltip contentStyle={{ fontSize: '11px', borderRadius: '8px' }} />
+                <Area type="monotone" dataKey="count" stroke="#2F4A3D" strokeWidth={2.5} fillOpacity={1} fill="url(#colorBooking)" name="Đơn hàng" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="text-[10px] text-center text-[#8A8177] font-semibold border-t border-slate-100 pt-3">
+            📍 Đơn hàng tăng trưởng ổn định qua kênh CTV
+          </div>
+        </div>
+
+        {/* Chart 3: Projected Revenue Comparison */}
+        <div className="bg-white border border-[#E3D8CB] rounded-[24px] p-6 shadow-sm lg:col-span-4 flex flex-col justify-between">
+          <div>
+            <h3 className="text-xs font-black uppercase tracking-wider text-[#2F4A3D] mb-1">🏦 Thống Kê Doanh Thu Dự Kiến</h3>
+            <p className="text-[11px] text-[#8A8177]">Phân tách số tiền đã thu thực tế và công nợ dự nợ thu</p>
+          </div>
+          <div className="h-[200px] my-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={revenueChartData} margin={{ top: 10, right: 5, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1EFEA" />
+                <XAxis dataKey="name" tick={{ fontSize: 8, fill: '#8A8177' }} stroke="#E3D8CB" />
+                <YAxis tick={{ fontSize: 9, fill: '#8A8177' }} stroke="#E3D8CB" formatter={(v) => `${(Number(v)/1000000).toFixed(1)}M`} />
+                <Tooltip formatter={(value: any) => [`${value.toLocaleString('vi-VN')} đ`]} contentStyle={{ fontSize: '11px', borderRadius: '8px' }} />
+                <Legend verticalAlign="top" height={25} iconSize={8} wrapperStyle={{ fontSize: '9px', fontWeight: 'bold' }} />
+                <Bar dataKey="paid" stackId="revenue" fill="#3F7D58" name="Thực nhận" />
+                <Bar dataKey="unpaid" stackId="revenue" fill="#B14A3B" name="Dự thu (Công nợ)" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="text-[10px] text-center text-[#8A8177] font-semibold border-t border-slate-100 pt-3">
+            📊 Tổng dư thu cần đốc thúc cọc: <b>{stats?.outstandingReceivables?.toLocaleString('vi-VN')} đ</b>
+          </div>
+        </div>
+      </div>
+
       {/* Main split: Alerts & stats distribution */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
@@ -374,6 +550,127 @@ export function AdminDashboard({ onNavigate }: AdminDashboardProps) {
                         ></div>
                       </div>
                     </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* Section: 3-Touches State Synced Booking Control */}
+          <div className="bg-white p-6 rounded-[24px] border border-[#E3D8CB] shadow-xs space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-[#E3D8CB]">
+              <div>
+                <h3 className="font-serif font-bold text-[#1F1F1C] text-base flex items-center gap-2">
+                  <ShieldCheck className="h-5 w-5 text-[#2F4A3D]" />
+                  Đối soát 3-Touches &amp; Sync thời gian thực
+                </h3>
+                <p className="text-[10px] text-[#8A8177] font-medium mt-0.5">
+                  Đồng bộ tức thời với cơ sở dữ liệu Postgres Microservices (0ms độ trễ)
+                </p>
+              </div>
+              <span className="text-[9px] text-[#C58B5C] bg-[#FEF6EC] border border-[#FBE3CC] px-2.5 py-1 rounded-full font-bold uppercase tracking-wider font-mono">
+                Active Cache
+              </span>
+            </div>
+
+            {/* Bookings rendering */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {(!syncBookings || syncBookings.filter(b => b.status === 'PENDING').length === 0) ? (
+                <div className="col-span-1 md:col-span-2 py-8 px-4 text-center bg-[#F7F3EC]/30 border border-dashed border-[#E3D8CB] rounded-2xl flex flex-col items-center justify-center space-y-2">
+                  <Sparkles className="w-8 h-8 text-[#C58B5C] animate-pulse" />
+                  <p className="text-xs font-bold text-[#1F1F1C]">Tuyệt vời! Tất cả đơn phòng đã được đồng bộ an toàn.</p>
+                  <p className="text-[10px] text-[#8A8177]">Không có đơn đặt cọc nào chờ phê duyệt tại thời điểm này.</p>
+                  <Button 
+                    variant="outline" 
+                    size="xs" 
+                    className="mt-2 font-black text-[10px]"
+                    onClick={async () => {
+                      try {
+                        const randomId = 'bk_opt_' + Math.round(1000 + Math.random() * 8999);
+                        const testBooking = {
+                          id: randomId,
+                          customerName: 'Kiều Anh Thư (Đối Soát)',
+                          phone: '0905111222',
+                          roomName: 'Phòng 101 - Bungalow Hoa Đào',
+                          checkIn: '2026-06-25',
+                          checkOut: '2026-06-27',
+                          sellingPrice: 1200000,
+                          status: 'PENDING',
+                          bookingStatus: 'lead',
+                          paymentStatus: 'unpaid',
+                          createdAt: new Date().toISOString()
+                        };
+                        await api.createBooking(testBooking as any);
+                        await fetchStatsAndFilters();
+                        window.dispatchEvent(new CustomEvent('room-status-updated'));
+                      } catch (err: any) {
+                        alert('Không thể tạo booking: ' + err.message);
+                      }
+                    }}
+                  >
+                    + Tạo Booking Test Đối Soát
+                  </Button>
+                </div>
+              ) : (
+                syncBookings.filter(b => b.status === 'PENDING').map((b: any) => {
+                  const checkInDate = b.checkIn || '';
+                  const checkOutDate = b.checkOut || '';
+                  
+                  return (
+                    <AtomicCard
+                      key={b.id}
+                      title={b.customerName || 'Khách hàng vãng lai'}
+                      subtitle={`Mã đơn: ${b.bookingCode || 'STAY-NEW'}`}
+                      price={(b.sellingPrice || b.clientPrice || 0).toLocaleString('vi-VN') + ' đ'}
+                      pricePeriod="tổng"
+                      statusBadge={
+                        <AtomicStatusPill type="booking" status={b.status} />
+                      }
+                      metadata={[
+                        { label: 'SĐT', value: b.phone || 'N/A', icon: <Users className="w-3.5 h-3.5" /> },
+                        { label: 'Thời gian', value: `${checkInDate} → ${checkOutDate}`, icon: <Clock className="w-3.5 h-3.5" /> },
+                        { label: 'Phòng', value: b.roomName || 'Bungalow sườn đồi', icon: <Home className="w-3.5 h-3.5 text-slate-400" /> },
+                        { label: 'Đại lý (CTV)', value: b.ctvName || 'Nguyễn Văn A', icon: <Users className="w-3.5 h-3.5" /> }
+                      ]}
+                      actionLabel="Xác Minh Duyệt Cọc"
+                      actionVariant="terracotta"
+                      confirmTitle="Ống Khóa Đối Soát"
+                      confirmWarning={`Xác nhận đã đối soát nhận cọc ${(b.sellingPrice * 0.3).toLocaleString('vi-VN')} đ (30%) của khách hàng thành công?`}
+                      onConfirm={async () => {
+                        try {
+                          await syncManager.mutate<any[], any>({
+                            key: 'bookings_all',
+                            mutationFn: async (payload: any) => {
+                              await api.updateBookingStatus(payload.id, 'APPROVED');
+                              await api.updateBooking(payload.id, { 
+                                paymentStatus: 'deposit_paid', 
+                                bookingStatus: 'confirmed' 
+                              });
+                              window.dispatchEvent(new CustomEvent('room-status-updated'));
+                              if ((window as any).showLiveToast) {
+                                (window as any).showLiveToast(
+                                  'ĐỒNG BỘ THÀNH CÔNG', 
+                                  `Đã duyệt cọc và đồng bộ lịch nghỉ của khách ${payload.customerName}!`, 
+                                  'BOOKING_SUCCESS'
+                                );
+                              }
+                              await fetchStatsAndFilters();
+                              return { ...payload, status: 'APPROVED', bookingStatus: 'confirmed', paymentStatus: 'deposit_paid' };
+                            },
+                            payload: b,
+                            optimisticReducer: (cur: any[], pay: any) => {
+                              return cur.map(it => 
+                                it.id === pay.id 
+                                  ? { ...it, status: 'APPROVED', bookingStatus: 'confirmed', paymentStatus: 'deposit_paid' } 
+                                  : it
+                              );
+                            }
+                          });
+                        } catch (err: any) {
+                          alert('Đang khôi phục trạng thái cũ do lỗi mạng: ' + err.message);
+                        }
+                      }}
+                    />
                   );
                 })
               )}

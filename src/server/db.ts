@@ -2,7 +2,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { 
   User, Property, Room, Booking, Wallet, PayoutRequest, 
-  AppNotification, ReferralLink, RoomType, Customer, Commission, AuditLog 
+  AppNotification, ReferralLink, RoomType, Customer, Commission, AuditLog,
+  SentEmail, DepositSetup
 } from '../types';
 
 interface DatabaseSchema {
@@ -18,6 +19,8 @@ interface DatabaseSchema {
   commissions: Commission[];
   auditLogs: AuditLog[];
   customers: Customer[];
+  sentEmails?: SentEmail[];
+  depositSetups?: DepositSetup[];
 }
 
 const DB_PATH = path.resolve(process.cwd(), 'data_store.json');
@@ -469,7 +472,9 @@ const INITIAL_DATA: DatabaseSchema = {
       newValue: 'status: confirmed',
       createdAt: new Date('2026-06-08T11:30:00Z').toISOString()
     }
-  ]
+  ],
+  sentEmails: [],
+  depositSetups: []
 };
 
 export class FileDatabase {
@@ -500,6 +505,12 @@ export class FileDatabase {
         }
         if (!this.data!.customers) {
           this.data!.customers = JSON.parse(JSON.stringify(INITIAL_DATA.customers || []));
+        }
+        if (!this.data!.sentEmails) {
+          this.data!.sentEmails = [];
+        }
+        if (!this.data!.depositSetups) {
+          this.data!.depositSetups = [];
         }
 
         // Align and sanitize physical rooms
@@ -873,6 +884,26 @@ export class FileDatabase {
             cms.status = 'approved';
             cms.paidAt = new Date().toISOString();
           }
+
+          // --- REFERRAL 1% PROGRAM COMMISSION ---
+          const bookingCtv = this.data!.users[booking.ctvId];
+          if (bookingCtv && bookingCtv.referredBy) {
+            const sponsorId = bookingCtv.referredBy;
+            const sponsorWallet = this.data!.wallets[sponsorId];
+            const bookingTotal = (booking.sellingPrice || 0) + (booking.surcharge || 0);
+            const referral1pct = Math.round(bookingTotal * 0.01);
+            if (sponsorWallet && referral1pct > 0) {
+              sponsorWallet.balance += referral1pct;
+              sponsorWallet.totalEarned += referral1pct;
+              
+              this.createNotification(
+                sponsorId, 
+                '💸 Nhận 1% Tiếp Thị Đồng Hành', 
+                `Bạn vừa được thưởng 1% (+${referral1pct.toLocaleString('vi-VN')}đ) từ đơn phòng thành công #${booking.bookingCode || booking.id} của cộng tác viên '${bookingCtv.name}' do bạn giới thiệu!`, 
+                'SUCCESS'
+              );
+            }
+          }
         } else if (status === 'CANCELLED') {
           wallet.pending = Math.max(0, wallet.pending - booking.commissionAmount);
           const cms = this.data!.commissions?.find(c => c.bookingId === booking.id);
@@ -1108,5 +1139,83 @@ export class FileDatabase {
       return true;
     }
     return false;
+  }
+
+  // --- SENT EMAILS ---
+  static getSentEmails(ctvId?: string) {
+    this.load();
+    if (!this.data!.sentEmails) this.data!.sentEmails = [];
+    if (!ctvId || ctvId === 'usr_admin') {
+      return this.data!.sentEmails;
+    }
+    return this.data!.sentEmails.filter(e => e.ctvId === ctvId);
+  }
+
+  static createSentEmail(email: SentEmail) {
+    this.load();
+    if (!this.data!.sentEmails) this.data!.sentEmails = [];
+    this.data!.sentEmails.push(email);
+    this.save();
+    return email;
+  }
+
+  // --- DEPOSIT SETUP ---
+  static getDepositSetup(ctvId: string): DepositSetup {
+    this.load();
+    if (!this.data!.depositSetups) this.data!.depositSetups = [];
+    
+    let setup = this.data!.depositSetups.find(s => s.ctvId === ctvId);
+    if (!setup) {
+      // Find wallet to auto-populate CTV bank details if possible
+      const wallet = this.data!.wallets[ctvId];
+      setup = {
+        ctvId,
+        ctvAccount: {
+          bankName: wallet?.bankName || 'Vietcombank',
+          bankAccount: wallet?.bankAccount || '1903554442221',
+          bankHolder: wallet?.bankHolder || 'NGUYEN VAN A',
+          verified: true
+        },
+        platformAccount: {
+          bankName: 'MB Bank',
+          bankAccount: '202611119999',
+          bankHolder: 'LÀNG BÌNH YÊN'
+        },
+        homeOwnerAccount: {
+          bankName: 'Vietcombank',
+          bankAccount: '00110044556677',
+          bankHolder: 'CHỦ KHU LƯU TRÚ'
+        },
+        updatedAt: new Date().toISOString()
+      };
+      this.data!.depositSetups.push(setup);
+      this.save();
+    }
+    return setup;
+  }
+
+  static updateDepositSetup(ctvId: string, updates: Partial<DepositSetup>) {
+    this.load();
+    if (!this.data!.depositSetups) this.data!.depositSetups = [];
+    
+    const idx = this.data!.depositSetups.findIndex(s => s.ctvId === ctvId);
+    if (idx !== -1) {
+      this.data!.depositSetups[idx] = {
+        ...this.data!.depositSetups[idx],
+        ...updates,
+        updatedAt: new Date().toISOString()
+      };
+    } else {
+      const defaultSetup = this.getDepositSetup(ctvId);
+      const newSetup = {
+        ...defaultSetup,
+        ...updates,
+        ctvId,
+        updatedAt: new Date().toISOString()
+      };
+      this.data!.depositSetups.push(newSetup);
+    }
+    this.save();
+    return this.getDepositSetup(ctvId);
   }
 }

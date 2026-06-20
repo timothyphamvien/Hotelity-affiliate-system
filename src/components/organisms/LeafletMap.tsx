@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Property, Room } from '../types';
+import { Property, Room } from '@/src/types';
 
 interface LeafletMapProps {
   properties: Property[];
